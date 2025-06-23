@@ -1,0 +1,513 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { ethers } from 'ethers';
+import Web3Modal from 'web3modal';
+import WalletConnectProvider from '@walletconnect/web3-provider';
+
+// --- Smart Contract ABI (Application Binary Interface) ---
+// This ABI is a simplified version; in a real project, you'd get the full ABI from your compiled contract.
+// You can get the full ABI from Remix after compiling your MoochRunner.sol contract.
+const MOOCH_RUNNER_ABI = [
+    // Functions for cycle management
+    "function currentCycleStart() view returns (uint256)",
+    "function memeSubmissionEndTime() view returns (uint256)",
+    "function votingEndTime() view returns (uint256)",
+    "function nextCycleStartTime() view returns (uint256)",
+    "function getCurrentTimers() view returns (uint256, uint256, uint256, uint256, uint8)",
+    "function endCycle()",
+    // Functions for meme interaction
+    "function submitMeme(string calldata _ticker, string calldata _name, string calldata _ipfsHash, string calldata _xLink)",
+    "function getAllActiveMemes() view returns (tuple(string ticker, string name, string ipfsHash, string xLink, address submitter, uint256 votes, bool active)[] memory)",
+    "function getMeme(uint256 _memeId) view returns (tuple(string ticker, string name, string ipfsHash, string xLink, address submitter, uint256 votes, bool active) memory)",
+    "function voteForMeme(uint256 _memeId)",
+    // Functions for runner interaction
+    "function getRunnerCandidatesForCurrentCycle() view returns (string[] memory)",
+    "function runnerVotes(string) view returns (uint256)", // To get individual runner vote counts
+    "function voteForRunner(string memory _ticker)",
+    // Functions for winners
+    "function getLastRunnerOfTheDay() view returns (string, uint256)",
+    "function getLastMemeOfTheDay() view returns (uint256, uint256)",
+    // Events
+    "event CycleStarted(uint256 cycleStart, uint256 memeSubEnd, uint256 votingEnd, uint256 nextStart)",
+    "event MemeSubmitted(uint256 memeId, string ticker, string name, string ipfsHash, address submitter)",
+    "event RunnerVoted(address voter, string ticker, uint256 newVoteCount)",
+    "event MemeVoted(address voter, uint256 memeId, uint256 newVoteCount)",
+    "event CycleEnded(string runnerOfTheDay, uint256 runnerVotes, uint256 memeOfTheDayId, uint256 memeVotes, uint256 nextCycleTimestamp)",
+    // ERC20 related functions (for approving $mooch token)
+    "function approve(address spender, uint256 amount) returns (bool)",
+    "function allowance(address owner, address spender) view returns (uint256)",
+    "function balanceOf(address account) view returns (uint256)",
+    "function decimals() view returns (uint8)",
+];
+
+// --- Contract Addresses ---
+// IMPORTANT: Replace with your deployed contract addresses on Avalanche C-chain
+const MOOCH_RUNNER_CONTRACT_ADDRESS = "0x3F3A54EF2186f54a106eeCF7A80d34C910bBdb72"; // Your deployed MoochRunner contract address
+const MOOCH_TOKEN_ADDRESS = "0x91af72ab0E89B398D1f6A75749fa66879C0a5e40";       // The $mooch ERC20 token contract address
+
+// --- IPFS Configuration ---
+// Using a public IPFS gateway for uploads via fetch API.
+// For production, consider dedicated services like Pinata or Infura with authentication.
+const IPFS_UPLOAD_URL = 'https://ipfs.io/api/v0/add'; // Public IPFS API endpoint for adding files
+
+// --- Helper for formatting timers ---
+const formatTime = (seconds) => {
+    if (seconds < 0) seconds = 0; // Prevent negative time
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+};
+
+const App = () => {
+    const [provider, setProvider] = useState(null);
+    const [library, setLibrary] = useState(null);
+    const [account, setAccount] = useState(null);
+    const [chainId, setChainId] = useState(null);
+    const [signer, setSigner] = useState(null);
+    const [moochRunnerContract, setMoochRunnerContract] = useState(null);
+    const [moochTokenContract, setMoochTokenContract] = useState(null);
+    const [moochTokenDecimals, setMoochTokenDecimals] = useState(18); // Default to 18 decimals
+
+    // Cycle Timers and Status
+    const [currentCycleStatus, setCurrentCycleStatus] = useState("Loading..."); // 0: Submission, 1: Voting, 2: Prep
+    const [timeRemaining, setTimeRemaining] = useState(0);
+
+    // Meme Submission State
+    const [memeTicker, setMemeTicker] = useState('');
+    const [memeName, setMemeName] = useState('');
+    const [memeImage, setMemeImage] = useState(null); // File object
+    const [memeXLink, setMemeXLink] = useState('');
+    const [memeImagePreview, setMemeImagePreview] = useState(null);
+    const [isSubmittingMeme, setIsSubmittingMeme] = useState(false);
+
+    // Memes for Display/Voting
+    const [activeMemes, setActiveMemes] = useState([]);
+    const [showMemeDetail, setShowMemeDetail] = useState(false);
+    const [selectedMeme, setSelectedMeme] = useState(null);
+
+    // Runner Voting State
+    const [runnerCandidates, setRunnerCandidates] = useState([]);
+    const [runnerVoteCounts, setRunnerVoteCounts] = useState({});
+    const [newRunnerTicker, setNewRunnerTicker] = useState(''); // For user to input new ticker to vote for
+    const [isVotingRunner, setIsVotingRunner] = useState(false);
+
+    // Last Cycle Winners
+    const [lastRunner, setLastRunner] = useState({ ticker: "N/A", votes: 0 });
+    const [lastMeme, setLastMeme] = useState(null);
+
+    // General UI State
+    const [message, setMessage] = useState('');
+    const [isLoading, setIsLoading] = useState(true);
+
+    // --- WalletConnect Setup ---
+    const providerOptions = {
+        walletconnect: {
+            package: WalletConnectProvider,
+            options: {
+                // Infura ID is optional for WalletConnect v1, but recommended for stability
+                // You'll need to set up an Infura project and add this to your .env
+                // infuraId: process.env.REACT_APP_INFURA_ID 
+            },
+        },
+        // You can add other providers here (e.g., Coinbase Wallet)
+    };
+
+    const web3Modal = new Web3Modal({
+        cacheProvider: true, // Optional: enables caching of provider for auto-connect
+        providerOptions,
+        disableInjectedProvider: false, // Optional: if you don't want MetaMask to be automatically detected
+    });
+
+    // Connect wallet function
+    const connectWallet = useCallback(async () => {
+        try {
+            const externalProvider = await web3Modal.connect();
+            const web3Provider = new ethers.providers.Web3Provider(externalProvider);
+
+            setProvider(externalProvider);
+            setLibrary(web3Provider);
+
+            const signerInstance = web3Provider.getSigner();
+            setSigner(signerInstance);
+
+            const accounts = await web3Provider.listAccounts();
+            if (accounts) setAccount(accounts[0]);
+
+            const network = await web3Provider.getNetwork();
+            // Avalanche C-chain ID is 43114 (mainnet) or 43113 (Fuji testnet)
+            // It's crucial to check if the connected chain is the correct one.
+            if (network.chainId !== 43114 && network.chainId !== 43113) {
+                 setMessage("Please switch to Avalanche C-Chain or Fuji Testnet in your wallet.");
+                 // Optionally, prompt to switch network here
+            }
+            setChainId(network.chainId);
+
+            // Initialize contracts after provider is set
+            const runnerContract = new ethers.Contract(MOOCH_RUNNER_CONTRACT_ADDRESS, MOOCH_RUNNER_ABI, signerInstance);
+            setMoochRunnerContract(runnerContract);
+
+            const tokenContract = new ethers.Contract(MOOCH_TOKEN_ADDRESS, MOOCH_RUNNER_ABI, signerInstance); // Using MoochRunner ABI for ERC20 functions as well
+            setMoochTokenContract(tokenContract);
+
+            // Fetch token decimals
+            try {
+                const decimals = await tokenContract.decimals();
+                setMoochTokenDecimals(decimals);
+            } catch (err) {
+                console.warn("Could not fetch $mooch token decimals. Assuming 18. Error:", err);
+                setMoochTokenDecimals(18); // Default to 18 if decimals() call fails
+            }
+            
+
+            // Event listeners for wallet changes
+            externalProvider.on("accountsChanged", (accounts) => {
+                setAccount(accounts[0]);
+                window.location.reload(); // Simple reload for account changes
+            });
+            externalProvider.on("chainChanged", (chainId) => {
+                setChainId(parseInt(chainId, 16));
+                window.location.reload(); // Simple reload for chain changes
+            });
+            externalProvider.on("disconnect", () => {
+                disconnectWallet();
+            });
+
+            setMessage("Wallet connected successfully!");
+        } catch (error) {
+            console.error("Failed to connect wallet:", error);
+            setMessage(`Wallet connection failed: ${error.message}`);
+        } finally {
+            setIsLoading(false);
+        }
+    }, []);
+
+    // Disconnect wallet function
+    const disconnectWallet = useCallback(async () => {
+        await web3Modal.clearCachedProvider();
+        if (provider?.disconnect) {
+            await provider.disconnect();
+        }
+        setProvider(null);
+        setLibrary(null);
+        setAccount(null);
+        setChainId(null);
+        setSigner(null);
+        setMoochRunnerContract(null);
+        setMoochTokenContract(null);
+        setMessage("Wallet disconnected.");
+        setIsLoading(false); // Make sure loading state is off
+        window.location.reload(); // Simple reload to clear state
+    }, [provider]);
+
+    // --- Contract Data Fetching ---
+    const fetchContractData = useCallback(async () => {
+        if (!moochRunnerContract || !library) return;
+        setIsLoading(true);
+        try {
+            // Get current cycle timers and status
+            const [currentCycleStart, memeSubmissionEndTime, votingEndTime, nextCycleStartTime, status] = await moochRunnerContract.getCurrentTimers();
+            const now = Math.floor(Date.now() / 1000); // Current timestamp in seconds
+
+            let remaining = 0;
+            let statusText = "";
+
+            switch (status) {
+                case 0: // Meme Submission
+                    remaining = memeSubmissionEndTime.toNumber() - now;
+                    statusText = "Meme Submission";
+                    break;
+                case 1: // Voting
+                    remaining = votingEndTime.toNumber() - now;
+                    statusText = "Voting";
+                    break;
+                case 2: // Prep
+                    remaining = nextCycleStartTime.toNumber() - now;
+                    statusText = "Prep";
+                    break;
+                default:
+                    statusText = "Unknown Phase";
+                    break;
+            }
+            setCurrentCycleStatus(statusText);
+            setTimeRemaining(remaining);
+
+            // Fetch active memes
+            // The `id` property is added for React's `key` prop and to reference the meme in the contract array.
+            // Note: `memes.indexOf(meme)` might not work as expected for objects, it's better to use the actual index from the contract if available
+            // For now, assuming the order returned by `getAllActiveMemes` corresponds to the contract's internal array IDs for active memes.
+            const rawActiveMemes = await moochRunnerContract.getAllActiveMemes();
+            const processedActiveMemes = rawActiveMemes.map((meme, idx) => ({
+                ...meme,
+                id: (meme.id !== undefined && typeof meme.id.toNumber === 'function') ? meme.id.toNumber() : idx, // Try to get ID from contract if available, otherwise use array index
+                votes: meme.votes.toNumber() // Convert BigNumber votes to number
+            }));
+            setActiveMemes(processedActiveMemes);
+
+            // Fetch runner candidates and their votes
+            const candidates = await moochRunnerContract.getRunnerCandidatesForCurrentCycle();
+            setRunnerCandidates(candidates);
+            const votesMap = {};
+            for (const ticker of candidates) {
+                votesMap[ticker] = (await moochRunnerContract.runnerVotes(ticker)).toNumber();
+            }
+            setRunnerVoteCounts(votesMap);
+
+            // Fetch last day's winners
+            const [lastR, lastRVotes] = await moochRunnerContract.getLastRunnerOfTheDay();
+            setLastRunner({ ticker: lastR, votes: lastRVotes.toNumber() });
+
+            const [lastMIdBigNumber, lastMVotesBigNumber] = await moochRunnerContract.getLastMemeOfTheDay();
+            const lastMId = lastMIdBigNumber.toNumber();
+            const lastMVotes = lastMVotesBigNumber.toNumber();
+
+            if (lastMId !== ethers.constants.MaxUint256.toNumber()) { // Check for sentinel value
+                const lastWinningMeme = await moochRunnerContract.getMeme(lastMId);
+                setLastMeme({ 
+                    ...lastWinningMeme, 
+                    id: lastMId, 
+                    votes: lastMVotes,
+                    // Ensure other BigNumber fields are converted if they exist in Meme struct
+                    submitter: lastWinningMeme.submitter // Keep address as is
+                });
+            } else {
+                setLastMeme(null);
+            }
+
+        } catch (error) {
+            console.error("Failed to fetch contract data:", error);
+            setMessage(`Error fetching data: ${error.message}`);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [moochRunnerContract, library]);
+
+    // Timer countdown effect
+    useEffect(() => {
+        const timer = setInterval(() => {
+            setTimeRemaining(prev => (prev > 0 ? prev - 1 : 0));
+        }, 1000);
+
+        // If timer hits zero in voting/prep, trigger a refetch to update phase
+        if (timeRemaining === 0 && !isLoading && moochRunnerContract) {
+            // Give a small delay to allow contract state to update if `endCycle` was called
+            setTimeout(() => fetchContractData(), 5000); 
+        }
+
+        return () => clearInterval(timer);
+    }, [timeRemaining, isLoading, moochRunnerContract, fetchContractData]);
+
+    // Initial load and auto-connect
+    useEffect(() => {
+        if (web3Modal.cachedProvider) {
+            connectWallet();
+        } else {
+            setIsLoading(false); // If no cached provider, stop loading
+        }
+    }, [connectWallet]);
+
+    // Fetch data when contract is ready or account changes
+    useEffect(() => {
+        if (moochRunnerContract && account) {
+            fetchContractData();
+        }
+    }, [moochRunnerContract, account, fetchContractData]);
+
+    // --- IPFS Upload Handling (Using Fetch API) ---
+    const handleImageChange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            setMemeImage(file);
+            setMemeImagePreview(URL.createObjectURL(file)); // Create a preview URL
+        } else {
+            setMemeImage(null);
+            setMemeImagePreview(null);
+        }
+    };
+
+    const uploadToIPFS = async (file) => {
+        try {
+            setMessage("Uploading image to IPFS...");
+            const formData = new FormData();
+            formData.append('file', file);
+
+            const response = await fetch(IPFS_UPLOAD_URL, {
+                method: 'POST',
+                // For public IPFS gateways, headers like Authorization might not be needed
+                // If using a private service, add headers: { 'Authorization': `Bearer YOUR_API_KEY` }
+                body: formData,
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+            }
+
+            const data = await response.json();
+            setMessage("Image uploaded to IPFS!");
+            return data.Hash; // The IPFS hash/CID is typically in the 'Hash' field
+        } catch (error) {
+            console.error("IPFS upload error:", error);
+            setMessage(`IPFS upload failed: ${error.message}. Ensure IPFS config/service is correct.`);
+            return null;
+        }
+    };
+
+    // --- Smart Contract Transaction Handlers ---
+
+    // Function to approve $mooch token for the MoochRunner contract
+    const approveMooch = async () => {
+        if (!moochTokenContract || !signer || !account) {
+            setMessage("Wallet not connected.");
+            return;
+        }
+        setIsLoading(true);
+        try {
+            // Check current allowance first to avoid unnecessary transactions
+            const currentAllowance = await moochTokenContract.allowance(account, MOOCH_RUNNER_CONTRACT_ADDRESS);
+            // We need to approve at least the PAYMENT_AMOUNT, but for convenience,
+            // we'll approve a large amount (MaxUint256) so user doesn't need to approve repeatedly.
+            const amountToApprove = ethers.constants.MaxUint256; 
+
+            if (currentAllowance.lt(amountToApprove)) {
+                setMessage("Approving $mooch tokens...");
+                const tx = await moochTokenContract.connect(signer).approve(MOOCH_RUNNER_CONTRACT_ADDRESS, amountToApprove);
+                await tx.wait();
+                setMessage("Mooch tokens approved successfully! You can now proceed with actions.");
+            } else {
+                setMessage("Mooch tokens already approved with sufficient allowance.");
+            }
+        } catch (error) {
+            console.error("Mooch approval failed:", error);
+            setMessage(`Mooch approval failed: ${error.message}`);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleSubmitMeme = async (e) => {
+        e.preventDefault();
+        if (!moochRunnerContract || !signer || !memeImage || !account) {
+            setMessage("Please connect wallet, select an image, and fill all fields.");
+            return;
+        }
+
+        setIsSubmittingMeme(true);
+        setMessage("Checking $mooch allowance...");
+
+        try {
+            // First, ensure allowance is set
+            // The contract's PAYMENT_AMOUNT assumes 18 decimals, so use that directly
+            const requiredAllowance = ethers.BigNumber.from(1).mul(ethers.BigNumber.from(10).pow(moochTokenDecimals)); 
+            const currentAllowance = await moochTokenContract.allowance(account, MOOCH_RUNNER_CONTRACT_ADDRESS);
+
+            if (currentAllowance.lt(requiredAllowance)) {
+                setMessage("Please approve $mooch tokens for the contract first.");
+                await approveMooch(); // Prompt for approval
+                // User will need to re-initiate submission after approval
+                setIsSubmittingMeme(false);
+                return;
+            }
+
+            const ipfsPath = await uploadToIPFS(memeImage);
+            if (!ipfsPath) {
+                setIsSubmittingMeme(false);
+                return;
+            }
+
+            setMessage("Submitting meme to blockchain...");
+            const tx = await moochRunnerContract.connect(signer).submitMeme(memeTicker, memeName, ipfsPath, memeXLink);
+            await tx.wait();
+            setMessage("Meme submitted successfully!");
+            // Clear form and refetch data
+            setMemeTicker('');
+            setMemeName('');
+            setMemeImage(null);
+            setMemeImagePreview(null);
+            setMemeXLink('');
+            fetchContractData();
+        } catch (error) {
+            console.error("Meme submission failed:", error);
+            setMessage(`Meme submission failed: ${error.message}`);
+        } finally {
+            setIsSubmittingMeme(false);
+        }
+    };
+
+    const handleVoteForRunner = async (ticker) => {
+        if (!moochRunnerContract || !signer || !account) {
+            setMessage("Wallet not connected.");
+            return;
+        }
+        setIsVotingRunner(true);
+        setMessage(`Checking $mooch allowance for voting on ${ticker}...`);
+
+        try {
+            const requiredAllowance = ethers.BigNumber.from(1).mul(ethers.BigNumber.from(10).pow(moochTokenDecimals)); // 1 $mooch
+            const currentAllowance = await moochTokenContract.allowance(account, MOOCH_RUNNER_CONTRACT_ADDRESS);
+
+            if (currentAllowance.lt(requiredAllowance)) {
+                setMessage("Please approve $mooch tokens for the contract first.");
+                await approveMooch();
+                setIsVotingRunner(false);
+                return;
+            }
+
+            setMessage(`Voting for ${ticker}...`);
+            const tx = await moochRunnerContract.connect(signer).voteForRunner(ticker);
+            await tx.wait();
+            setMessage(`Successfully voted for ${ticker}!`);
+            fetchContractData(); // Refresh vote counts
+        } catch (error) {
+            console.error("Runner vote failed:", error);
+            setMessage(`Voting failed: ${error.message}`);
+        } finally {
+            setIsVotingRunner(false);
+        }
+    };
+
+    const handleVoteForMeme = async (memeId) => {
+        if (!moochRunnerContract || !signer || !account) {
+            setMessage("Wallet not connected.");
+            return;
+        }
+        setMessage(`Checking $mooch allowance for voting on meme ${memeId}...`);
+        setIsLoading(true); // General loading for voting
+
+        try {
+            const requiredAllowance = ethers.BigNumber.from(1).mul(ethers.BigNumber.from(10).pow(moochTokenDecimals)); // 1 $mooch
+            const currentAllowance = await moochTokenContract.allowance(account, MOOCH_RUNNER_CONTRACT_ADDRESS);
+
+            if (currentAllowance.lt(requiredAllowance)) {
+                setMessage("Please approve $mooch tokens for the contract first.");
+                await approveMooch();
+                setIsLoading(false);
+                return;
+            }
+
+            setMessage(`Voting for meme ${memeId}...`);
+            const tx = await moochRunnerContract.connect(signer).voteForMeme(memeId);
+            await tx.wait();
+            setMessage(`Successfully voted for meme ${memeId}!`);
+            fetchContractData(); // Refresh meme vote counts
+        } catch (error) {
+            console.error("Meme vote failed:", error);
+            setMessage(`Voting failed: ${error.message}`);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleEndCycle = async () => {
+        if (!moochRunnerContract || !signer || !account) {
+            setMessage("Wallet not connected.");
+            return;
+        }
+        setIsLoading(true);
+        setMessage("Attempting to end cycle and declare winners...");
+        try {
+            const tx = await moochRunnerContract.connect(signer).endCycle();
+            await tx.wait();
+            setMessage("Cycle ended and new cycle started successfully!");
+            fetchContractData(); // Refresh all data
+        } catch (error) {
+            console.er
