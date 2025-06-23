@@ -87,13 +87,13 @@ const App = () => {
 
     // Runner Voting State
     const [runnerCandidates, setRunnerCandidates] = useState([]);
-    const [runnerVoteCounts, setRunnerVoteCounts] = useState({});
+    const [runnerVoteCounts, setRunnerVoteCounts] = {};
     const [newRunnerTicker, setNewRunnerTicker] = useState(''); // For user to input new ticker to vote for
     const [isVotingRunner, setIsVotingRunner] = useState(false);
 
     // Last Cycle Winners
     const [lastRunner, setLastRunner] = useState({ ticker: "N/A", votes: 0 });
-    const [lastMeme, setLastMeme] = useState(null);
+    const [lastMeme, setLastMeme] = null;
 
     // General UI State
     const [message, setMessage] = useState('');
@@ -510,4 +510,338 @@ const App = () => {
             setMessage("Cycle ended and new cycle started successfully!");
             fetchContractData(); // Refresh all data
         } catch (error) {
-            console.er
+            console.error("End cycle failed:", error);
+            setMessage(`End cycle failed: ${error.message}. Ensure the prep phase is over or another user has already ended it.`);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Determine if an action is available based on current phase
+    const isMemeSubmissionOpen = currentCycleStatus === "Meme Submission" && timeRemaining > 0;
+    const isVotingOpen = currentCycleStatus === "Voting" && timeRemaining > 0;
+    const isPrepPhase = currentCycleStatus === "Prep"; // Prep phase just means it's the 23-24 hour mark
+    const isEndCyclePossible = currentCycleStatus === "Prep" && timeRemaining <= 0; // Can call endCycle when Prep time runs out
+
+    // --- Render Logic ---
+    if (isLoading && !account) {
+        return (
+            <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-purple-800 to-indigo-900 text-white">
+                <div className="text-xl">Loading dApp...</div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="min-h-screen bg-gradient-to-br from-purple-800 to-indigo-900 text-white font-inter p-6 flex flex-col items-center">
+            <h1 className="text-5xl font-extrabold mb-8 text-center text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-red-600 rounded-lg p-2">
+                MOOCH RUNNER
+            </h1>
+
+            {!account ? (
+                <div className="bg-white bg-opacity-10 rounded-xl shadow-lg p-8 w-full max-w-md text-center border border-purple-500 transform transition-transform duration-300 hover:scale-105">
+                    <p className="text-xl mb-6">Connect your wallet to participate!</p>
+                    <button
+                        onClick={connectWallet}
+                        className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-bold py-3 px-6 rounded-full shadow-lg transition-all duration-300 transform hover:-translate-y-1"
+                    >
+                        Connect Wallet
+                    </button>
+                    {message && <p className="mt-4 text-sm text-yellow-300">{message}</p>}
+                </div>
+            ) : (
+                <div className="w-full max-w-5xl">
+                    <div className="bg-white bg-opacity-10 rounded-xl shadow-lg p-6 mb-8 border border-purple-500">
+                        <div className="flex justify-between items-center mb-4">
+                            <p className="text-lg">Connected: <span className="font-mono text-pink-300">{account.substring(0, 6)}...{account.substring(account.length - 4)}</span></p>
+                            <p className="text-lg">Chain ID: <span className="font-mono text-pink-300">{chainId} (Avalanche C-Chain)</span></p>
+                            <button
+                                onClick={disconnectWallet}
+                                className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-full transition-colors duration-200"
+                            >
+                                Disconnect
+                            </button>
+                        </div>
+                        <div className="text-center text-xl font-semibold mb-4 flex items-center justify-center">
+                            ⏰
+                            Current Phase: <span className="text-yellow-300 ml-2">{currentCycleStatus}</span> - Time Left: <span className="font-mono text-yellow-300 ml-2">{formatTime(timeRemaining)}</span>
+                        </div>
+                        {message && <p className="mt-2 text-center text-sm text-yellow-300">{message}</p>}
+                    </div>
+
+                    {/* Approve Mooch Section */}
+                    <div className="bg-white bg-opacity-10 rounded-xl shadow-lg p-6 mb-8 border border-purple-500">
+                        <h2 className="text-2xl font-semibold mb-4 text-center">Approve $MOOCH Token</h2>
+                        <p className="text-center mb-4">Before submitting memes or voting, you need to approve the Mooch Runner contract to spend your $mooch tokens. This is a one-time approval.</p>
+                        <button
+                            onClick={approveMooch}
+                            disabled={isLoading}
+                            className="w-full bg-gradient-to-r from-green-500 to-teal-600 hover:from-green-600 hover:to-teal-700 text-white font-bold py-3 px-6 rounded-full shadow-lg transition-all duration-300 transform hover:-translate-y-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {isLoading ? "Approving..." : "Approve $MOOCH"}
+                        </button>
+                    </div>
+
+                    {/* Cycle End Button (for testing/automation) */}
+                    {isEndCyclePossible && (
+                        <div className="bg-white bg-opacity-10 rounded-xl shadow-lg p-6 mb-8 border border-purple-500 text-center">
+                            <h2 className="text-2xl font-semibold mb-4">Cycle Ready to End!</h2>
+                            <p className="mb-4">The previous cycle has concluded. Anyone can call `endCycle` to process results and start the next cycle.</p>
+                            <button
+                                onClick={handleEndCycle}
+                                disabled={isLoading}
+                                className="bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-white font-bold py-3 px-6 rounded-full shadow-lg transition-all duration-300 transform hover:-translate-y-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {isLoading ? "Processing Cycle..." : "End Cycle & Start New Day"}
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Last Cycle Winners */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+                        <div className="bg-white bg-opacity-10 rounded-xl shadow-lg p-6 border border-purple-500">
+                            <h2 className="text-2xl font-semibold mb-4 text-center flex items-center justify-center">
+                                ⭐ Last Runner of the Day
+                            </h2>
+                            {lastRunner.ticker && lastRunner.ticker !== "" ? (
+                                <p className="text-center text-xl font-bold text-yellow-300">{lastRunner.ticker} ({lastRunner.votes} votes)</p>
+                            ) : (
+                                <p className="text-center text-lg text-gray-300">No runner determined yet.</p>
+                            )}
+                        </div>
+                        <div className="bg-white bg-opacity-10 rounded-xl shadow-lg p-6 border border-purple-500">
+                            <h2 className="text-2xl font-semibold mb-4 text-center flex items-center justify-center">
+                                ⭐ Last Meme of the Day
+                            </h2>
+                            {lastMeme ? (
+                                <div className="text-center">
+                                    <p className="text-lg font-bold text-yellow-300">{lastMeme.name} ({lastMeme.votes} votes)</p>
+                                    <p className="text-sm text-gray-300">Ticker: {lastMeme.ticker}</p>
+                                    <img
+                                        src={`https://ipfs.io/ipfs/${lastMeme.ipfsHash}`} // Public IPFS gateway
+                                        alt={lastMeme.name}
+                                        className="mt-4 mx-auto max-h-48 rounded-lg shadow-md"
+                                        onError={(e) => { e.target.onerror = null; e.target.src = "https://placehold.co/150x150/8a2be2/ffffff?text=Image+Error"; }}
+                                    />
+                                    {lastMeme.xLink && (
+                                        <a href={lastMeme.xLink} target="_blank" rel="noopener noreferrer" className="text-blue-300 hover:underline mt-2 inline-block">
+                                            View on X
+                                        </a>
+                                    )}
+                                </div>
+                            ) : (
+                                <p className="text-center text-lg text-gray-300">No meme determined yet.</p>
+                            )}
+                        </div>
+                    </div>
+
+
+                    {/* Meme Submission Section */}
+                    <div className="bg-white bg-opacity-10 rounded-xl shadow-lg p-6 mb-8 border border-purple-500">
+                        <h2 className="text-2xl font-semibold mb-4 text-center flex items-center justify-center">
+                            ⬆️ Submit Your Meme
+                        </h2>
+                        {!isMemeSubmissionOpen && <p className="text-center text-red-300 mb-4">Meme submission is currently closed.</p>}
+                        <form onSubmit={handleSubmitMeme} className="space-y-4">
+                            <div>
+                                <label htmlFor="memeTicker" className="block text-lg font-medium mb-2">Ticker</label>
+                                <input
+                                    type="text"
+                                    id="memeTicker"
+                                    value={memeTicker}
+                                    onChange={(e) => setMemeTicker(e.target.value)}
+                                    className="w-full p-3 rounded-md bg-white bg-opacity-5 border border-purple-400 text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    placeholder="e.g., AVAX, BTC"
+                                    required
+                                    disabled={!isMemeSubmissionOpen || isSubmittingMeme}
+                                />
+                            </div>
+                            <div>
+                                <label htmlFor="memeName" className="block text-lg font-medium mb-2">Meme Name</label>
+                                <input
+                                    type="text"
+                                    id="memeName"
+                                    value={memeName}
+                                    onChange={(e) => setMemeName(e.target.value)}
+                                    className="w-full p-3 rounded-md bg-white bg-opacity-5 border border-purple-400 text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    placeholder="e.g., Diamond Hands"
+                                    required
+                                    disabled={!isMemeSubmissionOpen || isSubmittingMeme}
+                                />
+                            </div>
+                            <div>
+                                <label htmlFor="memeImage" className="block text-lg font-medium mb-2">Meme Image (PNG/JPG)</label>
+                                <input
+                                    type="file"
+                                    id="memeImage"
+                                    accept="image/png, image/jpeg"
+                                    onChange={handleImageChange}
+                                    className="w-full p-3 rounded-md bg-white bg-opacity-5 border border-purple-400 text-white file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-500 file:text-white hover:file:bg-blue-600 cursor-pointer"
+                                    required
+                                    disabled={!isMemeSubmissionOpen || isSubmittingMeme}
+                                />
+                                {memeImagePreview && (
+                                    <img src={memeImagePreview} alt="Meme Preview" className="mt-4 max-h-48 mx-auto rounded-lg shadow-md" />
+                                )}
+                            </div>
+                            <div>
+                                <label htmlFor="memeXLink" className="block text-lg font-medium mb-2">Optional X (Twitter) Link</label>
+                                <input
+                                    type="url"
+                                    id="memeXLink"
+                                    value={memeXLink}
+                                    onChange={(e) => setMemeXLink(e.target.value)}
+                                    className="w-full p-3 rounded-md bg-white bg-opacity-5 border border-purple-400 text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    placeholder="e.g., https://twitter.com/..."
+                                    disabled={!isMemeSubmissionOpen || isSubmittingMeme}
+                                />
+                            </div>
+                            <button
+                                type="submit"
+                                disabled={!isMemeSubmissionOpen || isSubmittingMeme}
+                                className="w-full bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white font-bold py-3 px-6 rounded-full shadow-lg transition-all duration-300 transform hover:-translate-y-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {isSubmittingMeme ? "Submitting..." : "Submit Meme (1 $MOOCH)"}
+                            </button>
+                        </form>
+                    </div>
+
+                    {/* Runner Voting Section */}
+                    <div className="bg-white bg-opacity-10 rounded-xl shadow-lg p-6 mb-8 border border-purple-500">
+                        <h2 className="text-2xl font-semibold mb-4 text-center flex items-center justify-center">
+                            🚀 Vote for Runner of the Day
+                        </h2>
+                        {!isVotingOpen && <p className="text-center text-red-300 mb-4">Runner voting is currently closed.</p>}
+                        
+                        {runnerCandidates.length > 0 ? (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {runnerCandidates.map((ticker, index) => (
+                                    <div key={index} className="bg-white bg-opacity-15 p-4 rounded-lg flex justify-between items-center border border-gray-600">
+                                        <span className="font-bold text-xl">{ticker}</span>
+                                        <span className="text-lg text-gray-300">Votes: {runnerVoteCounts[ticker] || 0}</span>
+                                        <button
+                                            onClick={() => handleVoteForRunner(ticker)}
+                                            disabled={!isVotingOpen || isVotingRunner}
+                                            className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-full transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            Vote (1 $MOOCH)
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <p className="text-center text-lg text-gray-300">No runners to vote for yet. Be the first to vote for a ticker!</p>
+                        )}
+                         <div className="mt-6">
+                            <input
+                                type="text"
+                                value={newRunnerTicker}
+                                onChange={(e) => setNewRunnerTicker(e.target.value.toUpperCase())}
+                                placeholder="Enter Ticker (e.g., SOL, ADA)"
+                                className="w-full p-3 rounded-md bg-white bg-opacity-5 border border-purple-400 text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                disabled={!isVotingOpen || isVotingRunner}
+                            />
+                            <button
+                                onClick={() => handleVoteForRunner(newRunnerTicker)}
+                                disabled={!isVotingOpen || isVotingRunner || newRunnerTicker.trim() === ''}
+                                className="w-full mt-4 bg-gradient-to-r from-teal-500 to-cyan-600 hover:from-teal-600 hover:to-cyan-700 text-white font-bold py-3 px-6 rounded-full shadow-lg transition-all duration-300 transform hover:-translate-y-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Vote for New Runner (1 $MOOCH)
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Meme Voting Section / Gallery */}
+                    <div className="bg-white bg-opacity-10 rounded-xl shadow-lg p-6 border border-purple-500">
+                        <h2 className="text-2xl font-semibold mb-4 text-center flex items-center justify-center">
+                            ✨ Vote for Memes
+                        </h2>
+                        {!isVotingOpen && <p className="text-center text-red-300 mb-4">Meme voting is currently closed.</p>}
+                        
+                        {activeMemes.length > 0 ? (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {activeMemes.map((meme, index) => (
+                                    <div 
+                                        key={meme.id !== undefined ? meme.id : index} // Use meme.id from contract if available, fallback to index
+                                        className="bg-white bg-opacity-15 rounded-lg shadow-md overflow-hidden transform transition-transform duration-300 hover:scale-105 cursor-pointer border border-gray-600 flex flex-col"
+                                        onClick={() => { setSelectedMeme(meme); setShowMemeDetail(true); }}
+                                    >
+                                        <img 
+                                            src={`https://ipfs.io/ipfs/${meme.ipfsHash}`} 
+                                            alt={meme.name} 
+                                            className="w-full h-48 object-cover object-center"
+                                            onError={(e) => { e.target.onerror = null; e.target.src = "https://placehold.co/200x150/8a2be2/ffffff?text=Image+Error"; }}
+                                        />
+                                        <div className="p-4 flex-grow flex flex-col justify-between">
+                                            <div>
+                                                <h3 className="text-xl font-bold mb-1">{meme.name}</h3>
+                                                <p className="text-sm text-gray-300">Ticker: {meme.ticker}</p>
+                                                <p className="text-md text-gray-200 mt-2">Votes: {meme.votes.toString()}</p>
+                                            </div>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); handleVoteForMeme(meme.id); }} // Stop propagation to prevent opening detail
+                                                disabled={!isVotingOpen || isLoading}
+                                                className="mt-4 w-full bg-pink-500 hover:bg-pink-600 text-white font-bold py-2 px-4 rounded-full transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                Vote (1 $MOOCH)
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <p className="text-center text-lg text-gray-300">No memes submitted for this cycle yet.</p>
+                        )}
+                    </div>
+
+                    {/* Meme Detail Modal */}
+                    {showMemeDetail && selectedMeme && (
+                        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50">
+                            <div className="bg-white bg-opacity-20 rounded-xl shadow-2xl p-6 relative w-full max-w-2xl border border-purple-400">
+                                <button
+                                    onClick={() => setShowMemeDetail(false)}
+                                    className="absolute top-4 right-4 text-white text-2xl hover:text-red-400 transition-colors"
+                                >
+                                    ✖️
+                                </button>
+                                <h3 className="text-3xl font-bold mb-4 text-center text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-red-600">{selectedMeme.name}</h3>
+                                <div className="text-center mb-4">
+                                    <p className="text-lg text-gray-200">Ticker: <span className="font-bold">{selectedMeme.ticker}</span></p>
+                                    <p className="text-lg text-gray-200">Votes: <span className="font-bold">{selectedMeme.votes.toString()}</span></p>
+                                </div>
+                                <img
+                                    src={`https://ipfs.io/ipfs/${selectedMeme.ipfsHash}`}
+                                    alt={selectedMeme.name}
+                                    className="w-full max-h-96 object-contain rounded-lg shadow-lg mx-auto"
+                                    onError={(e) => { e.target.onerror = null; e.target.src = "https://placehold.co/400x300/8a2be2/ffffff?text=Image+Error"; }}
+                                />
+                                {selectedMeme.xLink && (
+                                    <div className="text-center mt-4">
+                                        <a
+                                            href={selectedMeme.xLink}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-blue-300 hover:underline text-lg font-semibold"
+                                        >
+                                            View on X (Twitter)
+                                        </a>
+                                    </div>
+                                )}
+                                <div className="mt-6 flex justify-center">
+                                    <button
+                                        onClick={() => setShowMemeDetail(false)}
+                                        className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-6 rounded-full transition-colors duration-200"
+                                    >
+                                        Back
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
+
+export default App;
