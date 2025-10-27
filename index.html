@@ -1,847 +1,558 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { ethers } from 'ethers';
-import Web3Modal from 'web3modal';
-import WalletConnectProvider from '@walletconnect/web3-provider';
-
-// --- Smart Contract ABI (Application Binary Interface) ---
-// This ABI is a simplified version; in a real project, you'd get the full ABI from your compiled contract.
-// You can get the full ABI from Remix after compiling your MoochRunner.sol contract.
-const MOOCH_RUNNER_ABI = [
-    // Functions for cycle management
-    "function currentCycleStart() view returns (uint256)",
-    "function memeSubmissionEndTime() view returns (uint256)",
-    "function votingEndTime() view returns (uint256)",
-    "function nextCycleStartTime() view returns (uint256)",
-    "function getCurrentTimers() view returns (uint256, uint256, uint256, uint256, uint8)",
-    "function endCycle()",
-    // Functions for meme interaction
-    "function submitMeme(string calldata _ticker, string calldata _name, string calldata _ipfsHash, string calldata _xLink)",
-    "function getAllActiveMemes() view returns (tuple(string ticker, string name, string ipfsHash, string xLink, address submitter, uint256 votes, bool active)[] memory)",
-    "function getMeme(uint256 _memeId) view returns (tuple(string ticker, string name, string ipfsHash, string xLink, address submitter, uint256 votes, bool active) memory)",
-    "function voteForMeme(uint256 _memeId)",
-    // Functions for runner interaction
-    "function getRunnerCandidatesForCurrentCycle() view returns (string[] memory)",
-    "function runnerVotes(string) view returns (uint256)", // To get individual runner vote counts
-    "function voteForRunner(string memory _ticker)",
-    // Functions for winners
-    "function getLastRunnerOfTheDay() view returns (string, uint256)",
-    "function getLastMemeOfTheDay() view returns (uint256, uint256)",
-    // Events
-    "event CycleStarted(uint256 cycleStart, uint256 memeSubEnd, uint256 votingEnd, uint256 nextStart)",
-    "event MemeSubmitted(uint256 memeId, string ticker, string name, string ipfsHash, address submitter)",
-    "event RunnerVoted(address voter, string ticker, uint256 newVoteCount)",
-    "event MemeVoted(address voter, uint256 memeId, uint256 newVoteCount)",
-    "event CycleEnded(string runnerOfTheDay, uint256 runnerVotes, uint256 memeOfTheDayId, uint256 memeVotes, uint256 nextCycleTimestamp)",
-    // ERC20 related functions (for approving $mooch token)
-    "function approve(address spender, uint256 amount) returns (bool)",
-    "function allowance(address owner, address spender) view returns (uint256)",
-    "function balanceOf(address account) view returns (uint256)",
-    "function decimals() view returns (uint8)",
-];
-
-// --- Contract Addresses ---
-// IMPORTANT: Replace with your deployed contract addresses on Avalanche C-chain
-const MOOCH_RUNNER_CONTRACT_ADDRESS = "0x3F3A54EF2186f54a106eeCF7A80d34C910bBdb72"; // Your deployed MoochRunner contract address
-const MOOCH_TOKEN_ADDRESS = "0x91af72ab0E89B398D1f6A75749fa66879C0a5e40";       // The $mooch ERC20 token contract address
-
-// --- IPFS Configuration ---
-// Using a public IPFS gateway for uploads via fetch API.
-// For production, consider dedicated services like Pinata or Infura with authentication.
-const IPFS_UPLOAD_URL = 'https://ipfs.io/api/v0/add'; // Public IPFS API endpoint for adding files
-
-// --- Helper for formatting timers ---
-const formatTime = (seconds) => {
-    if (seconds < 0) seconds = 0; // Prevent negative time
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = Math.floor(seconds % 60);
-    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-};
-
-const App = () => {
-    const [provider, setProvider] = useState(null);
-    const [library, setLibrary] = useState(null);
-    const [account, setAccount] = useState(null);
-    const [chainId, setChainId] = useState(null);
-    const [signer, setSigner] = useState(null);
-    const [moochRunnerContract, setMoochRunnerContract] = useState(null);
-    const [moochTokenContract, setMoochTokenContract] = useState(null);
-    const [moochTokenDecimals, setMoochTokenDecimals] = useState(18); // Default to 18 decimals
-
-    // Cycle Timers and Status
-    const [currentCycleStatus, setCurrentCycleStatus] = useState("Loading..."); // 0: Submission, 1: Voting, 2: Prep
-    const [timeRemaining, setTimeRemaining] = useState(0);
-
-    // Meme Submission State
-    const [memeTicker, setMemeTicker] = useState('');
-    const [memeName, setMemeName] = useState('');
-    const [memeImage, setMemeImage] = useState(null); // File object
-    const [memeXLink, setMemeXLink] = useState('');
-    const [memeImagePreview, setMemeImagePreview] = useState(null);
-    const [isSubmittingMeme, setIsSubmittingMeme] = useState(false);
-
-    // Memes for Display/Voting
-    const [activeMemes, setActiveMemes] = useState([]);
-    const [showMemeDetail, setShowMemeDetail] = useState(false);
-    const [selectedMeme, setSelectedMeme] = useState(null);
-
-    // Runner Voting State
-    const [runnerCandidates, setRunnerCandidates] = useState([]);
-    const [runnerVoteCounts, setRunnerVoteCounts] = {};
-    const [newRunnerTicker, setNewRunnerTicker] = useState(''); // For user to input new ticker to vote for
-    const [isVotingRunner, setIsVotingRunner] = useState(false);
-
-    // Last Cycle Winners
-    const [lastRunner, setLastRunner] = useState({ ticker: "N/A", votes: 0 });
-    const [lastMeme, setLastMeme] = null;
-
-    // General UI State
-    const [message, setMessage] = useState('');
-    const [isLoading, setIsLoading] = useState(true);
-
-    // --- WalletConnect Setup ---
-    const providerOptions = {
-        walletconnect: {
-            package: WalletConnectProvider,
-            options: {
-                // Infura ID is optional for WalletConnect v1, but recommended for stability
-                // You'll need to set up an Infura project and add this to your .env
-                // infuraId: process.env.REACT_APP_INFURA_ID 
-            },
-        },
-        // You can add other providers here (e.g., Coinbase Wallet)
-    };
-
-    const web3Modal = new Web3Modal({
-        cacheProvider: true, // Optional: enables caching of provider for auto-connect
-        providerOptions,
-        disableInjectedProvider: false, // Optional: if you don't want MetaMask to be automatically detected
-    });
-
-    // Connect wallet function
-    const connectWallet = useCallback(async () => {
-        try {
-            const externalProvider = await web3Modal.connect();
-            const web3Provider = new ethers.providers.Web3Provider(externalProvider);
-
-            setProvider(externalProvider);
-            setLibrary(web3Provider);
-
-            const signerInstance = web3Provider.getSigner();
-            setSigner(signerInstance);
-
-            const accounts = await web3Provider.listAccounts();
-            if (accounts) setAccount(accounts[0]);
-
-            const network = await web3Provider.getNetwork();
-            // Avalanche C-chain ID is 43114 (mainnet) or 43113 (Fuji testnet)
-            // It's crucial to check if the connected chain is the correct one.
-            if (network.chainId !== 43114 && network.chainId !== 43113) {
-                 setMessage("Please switch to Avalanche C-Chain or Fuji Testnet in your wallet.");
-                 // Optionally, prompt to switch network here
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AVAX Price Predictor</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load Ethers.js for Web3 interaction -->
+    <script src="https://cdn.jsdelivr.net/npm/ethers@6.10.0/dist/ethers.umd.min.js"></script>
+    <!-- Load Supabase Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'primary-red': '#B91C1C', // Deep Red
+                        'accent-red': '#FCA5A5', // Light Red for background/highlights
+                        'up-bet': '#B91C1C',    // Strong Red for UP
+                        'down-bet': '#4B5563',  // Dark Gray for DOWN (to contrast with red, avoiding other colors)
+                        'nav-bg': '#374151',    // Dark background for navigation
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    }
+                }
             }
-            setChainId(network.chainId);
-
-            // Initialize contracts after provider is set
-            const runnerContract = new ethers.Contract(MOOCH_RUNNER_CONTRACT_ADDRESS, MOOCH_RUNNER_ABI, signerInstance);
-            setMoochRunnerContract(runnerContract);
-
-            const tokenContract = new ethers.Contract(MOOCH_TOKEN_ADDRESS, MOOCH_RUNNER_ABI, signerInstance); // Using MoochRunner ABI for ERC20 functions as well
-            setMoochTokenContract(tokenContract);
-
-            // Fetch token decimals
-            try {
-                const decimals = await tokenContract.decimals();
-                setMoochTokenDecimals(decimals);
-            } catch (err) {
-                console.warn("Could not fetch $mooch token decimals. Assuming 18. Error:", err);
-                setMoochTokenDecimals(18); // Default to 18 if decimals() call fails
-            }
-            
-
-            // Event listeners for wallet changes
-            externalProvider.on("accountsChanged", (accounts) => {
-                setAccount(accounts[0]);
-                window.location.reload(); // Simple reload for account changes
-            });
-            externalProvider.on("chainChanged", (chainId) => {
-                setChainId(parseInt(chainId, 16));
-                window.location.reload(); // Simple reload for chain changes
-            });
-            externalProvider.on("disconnect", () => {
-                disconnectWallet();
-            });
-
-            setMessage("Wallet connected successfully!");
-        } catch (error) {
-            console.error("Failed to connect wallet:", error);
-            setMessage(`Wallet connection failed: ${error.message}`);
-        } finally {
-            setIsLoading(false);
         }
-    }, []);
+    </script>
+</head>
+<body class="bg-gray-50 font-sans text-gray-800 min-h-screen pt-16">
 
-    // Disconnect wallet function
-    const disconnectWallet = useCallback(async () => {
-        await web3Modal.clearCachedProvider();
-        if (provider?.disconnect) {
-            await provider.disconnect();
-        }
-        setProvider(null);
-        setLibrary(null);
-        setAccount(null);
-        setChainId(null);
-        setSigner(null);
-        setMoochRunnerContract(null);
-        setMoochTokenContract(null);
-        setMessage("Wallet disconnected.");
-        setIsLoading(false); // Make sure loading state is off
-        window.location.reload(); // Simple reload to clear state
-    }, [provider]);
-
-    // --- Contract Data Fetching ---
-    const fetchContractData = useCallback(async () => {
-        if (!moochRunnerContract || !library) return;
-        setIsLoading(true);
-        try {
-            // Get current cycle timers and status
-            const [currentCycleStart, memeSubmissionEndTime, votingEndTime, nextCycleStartTime, status] = await moochRunnerContract.getCurrentTimers();
-            const now = Math.floor(Date.now() / 1000); // Current timestamp in seconds
-
-            let remaining = 0;
-            let statusText = "";
-
-            switch (status) {
-                case 0: // Meme Submission
-                    remaining = memeSubmissionEndTime.toNumber() - now;
-                    statusText = "Meme Submission";
-                    break;
-                case 1: // Voting
-                    remaining = votingEndTime.toNumber() - now;
-                    statusText = "Voting";
-                    break;
-                case 2: // Prep
-                    remaining = nextCycleStartTime.toNumber() - now;
-                    statusText = "Prep";
-                    break;
-                default:
-                    statusText = "Unknown Phase";
-                    break;
-            }
-            setCurrentCycleStatus(statusText);
-            setTimeRemaining(remaining);
-
-            // Fetch active memes
-            // The `id` property is added for React's `key` prop and to reference the meme in the contract array.
-            // Note: `memes.indexOf(meme)` might not work as expected for objects, it's better to use the actual index from the contract if available
-            // For now, assuming the order returned by `getAllActiveMemes` corresponds to the contract's internal array IDs for active memes.
-            const rawActiveMemes = await moochRunnerContract.getAllActiveMemes();
-            const processedActiveMemes = rawActiveMemes.map((meme, idx) => ({
-                ...meme,
-                id: (meme.id !== undefined && typeof meme.id.toNumber === 'function') ? meme.id.toNumber() : idx, // Try to get ID from contract if available, otherwise use array index
-                votes: meme.votes.toNumber() // Convert BigNumber votes to number
-            }));
-            setActiveMemes(processedActiveMemes);
-
-            // Fetch runner candidates and their votes
-            const candidates = await moochRunnerContract.getRunnerCandidatesForCurrentCycle();
-            setRunnerCandidates(candidates);
-            const votesMap = {};
-            for (const ticker of candidates) {
-                votesMap[ticker] = (await moochRunnerContract.runnerVotes(ticker)).toNumber();
-            }
-            setRunnerVoteCounts(votesMap);
-
-            // Fetch last day's winners
-            const [lastR, lastRVotes] = await moochRunnerContract.getLastRunnerOfTheDay();
-            setLastRunner({ ticker: lastR, votes: lastRVotes.toNumber() });
-
-            const [lastMIdBigNumber, lastMVotesBigNumber] = await moochRunnerContract.getLastMemeOfTheDay();
-            const lastMId = lastMIdBigNumber.toNumber();
-            const lastMVotes = lastMVotesBigNumber.toNumber();
-
-            if (lastMId !== ethers.constants.MaxUint256.toNumber()) { // Check for sentinel value
-                const lastWinningMeme = await moochRunnerContract.getMeme(lastMId);
-                setLastMeme({ 
-                    ...lastWinningMeme, 
-                    id: lastMId, 
-                    votes: lastMVotes,
-                    // Ensure other BigNumber fields are converted if they exist in Meme struct
-                    submitter: lastWinningMeme.submitter // Keep address as is
-                });
-            } else {
-                setLastMeme(null);
-            }
-
-        } catch (error) {
-            console.error("Failed to fetch contract data:", error);
-            setMessage(`Error fetching data: ${error.message}`);
-        } finally {
-            setIsLoading(false);
-        }
-    }, [moochRunnerContract, library]);
-
-    // Timer countdown effect
-    useEffect(() => {
-        const timer = setInterval(() => {
-            setTimeRemaining(prev => (prev > 0 ? prev - 1 : 0));
-        }, 1000);
-
-        // If timer hits zero in voting/prep, trigger a refetch to update phase
-        if (timeRemaining === 0 && !isLoading && moochRunnerContract) {
-            // Give a small delay to allow contract state to update if `endCycle` was called
-            setTimeout(() => fetchContractData(), 5000); 
-        }
-
-        return () => clearInterval(timer);
-    }, [timeRemaining, isLoading, moochRunnerContract, fetchContractData]);
-
-    // Initial load and auto-connect
-    useEffect(() => {
-        if (web3Modal.cachedProvider) {
-            connectWallet();
-        } else {
-            setIsLoading(false); // If no cached provider, stop loading
-        }
-    }, [connectWallet]);
-
-    // Fetch data when contract is ready or account changes
-    useEffect(() => {
-        if (moochRunnerContract && account) {
-            fetchContractData();
-        }
-    }, [moochRunnerContract, account, fetchContractData]);
-
-    // --- IPFS Upload Handling (Using Fetch API) ---
-    const handleImageChange = (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            setMemeImage(file);
-            setMemeImagePreview(URL.createObjectURL(file)); // Create a preview URL
-        } else {
-            setMemeImage(null);
-            setMemeImagePreview(null);
-        }
-    };
-
-    const uploadToIPFS = async (file) => {
-        try {
-            setMessage("Uploading image to IPFS...");
-            const formData = new FormData();
-            formData.append('file', file);
-
-            const response = await fetch(IPFS_UPLOAD_URL, {
-                method: 'POST',
-                // For public IPFS gateways, headers like Authorization might not be needed
-                // If using a private service, add headers: { 'Authorization': `Bearer YOUR_API_KEY` }
-                body: formData,
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
-            }
-
-            const data = await response.json();
-            setMessage("Image uploaded to IPFS!");
-            return data.Hash; // The IPFS hash/CID is typically in the 'Hash' field
-        } catch (error) {
-            console.error("IPFS upload error:", error);
-            setMessage(`IPFS upload failed: ${error.message}. Ensure IPFS config/service is correct.`);
-            return null;
-        }
-    };
-
-    // --- Smart Contract Transaction Handlers ---
-
-    // Function to approve $mooch token for the MoochRunner contract
-    const approveMooch = async () => {
-        if (!moochTokenContract || !signer || !account) {
-            setMessage("Wallet not connected.");
-            return;
-        }
-        setIsLoading(true);
-        try {
-            // Check current allowance first to avoid unnecessary transactions
-            const currentAllowance = await moochTokenContract.allowance(account, MOOCH_RUNNER_CONTRACT_ADDRESS);
-            // We need to approve at least the PAYMENT_AMOUNT, but for convenience,
-            // we'll approve a large amount (MaxUint256) so user doesn't need to approve repeatedly.
-            const amountToApprove = ethers.constants.MaxUint256; 
-
-            if (currentAllowance.lt(amountToApprove)) {
-                setMessage("Approving $mooch tokens...");
-                const tx = await moochTokenContract.connect(signer).approve(MOOCH_RUNNER_CONTRACT_ADDRESS, amountToApprove);
-                await tx.wait();
-                setMessage("Mooch tokens approved successfully! You can now proceed with actions.");
-            } else {
-                setMessage("Mooch tokens already approved with sufficient allowance.");
-            }
-        } catch (error) {
-            console.error("Mooch approval failed:", error);
-            setMessage(`Mooch approval failed: ${error.message}`);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const handleSubmitMeme = async (e) => {
-        e.preventDefault();
-        if (!moochRunnerContract || !signer || !memeImage || !account) {
-            setMessage("Please connect wallet, select an image, and fill all fields.");
-            return;
-        }
-
-        setIsSubmittingMeme(true);
-        setMessage("Checking $mooch allowance...");
-
-        try {
-            // First, ensure allowance is set
-            // The contract's PAYMENT_AMOUNT assumes 18 decimals, so use that directly
-            const requiredAllowance = ethers.BigNumber.from(1).mul(ethers.BigNumber.from(10).pow(moochTokenDecimals)); 
-            const currentAllowance = await moochTokenContract.allowance(account, MOOCH_RUNNER_CONTRACT_ADDRESS);
-
-            if (currentAllowance.lt(requiredAllowance)) {
-                setMessage("Please approve $mooch tokens for the contract first.");
-                await approveMooch(); // Prompt for approval
-                // User will need to re-initiate submission after approval
-                setIsSubmittingMeme(false);
-                return;
-            }
-
-            const ipfsPath = await uploadToIPFS(memeImage);
-            if (!ipfsPath) {
-                setIsSubmittingMeme(false);
-                return;
-            }
-
-            setMessage("Submitting meme to blockchain...");
-            const tx = await moochRunnerContract.connect(signer).submitMeme(memeTicker, memeName, ipfsPath, memeXLink);
-            await tx.wait();
-            setMessage("Meme submitted successfully!");
-            // Clear form and refetch data
-            setMemeTicker('');
-            setMemeName('');
-            setMemeImage(null);
-            setMemeImagePreview(null);
-            setMemeXLink('');
-            fetchContractData();
-        } catch (error) {
-            console.error("Meme submission failed:", error);
-            setMessage(`Meme submission failed: ${error.message}`);
-        } finally {
-            setIsSubmittingMeme(false);
-        }
-    };
-
-    const handleVoteForRunner = async (ticker) => {
-        if (!moochRunnerContract || !signer || !account) {
-            setMessage("Wallet not connected.");
-            return;
-        }
-        setIsVotingRunner(true);
-        setMessage(`Checking $mooch allowance for voting on ${ticker}...`);
-
-        try {
-            const requiredAllowance = ethers.BigNumber.from(1).mul(ethers.BigNumber.from(10).pow(moochTokenDecimals)); // 1 $mooch
-            const currentAllowance = await moochTokenContract.allowance(account, MOOCH_RUNNER_CONTRACT_ADDRESS);
-
-            if (currentAllowance.lt(requiredAllowance)) {
-                setMessage("Please approve $mooch tokens for the contract first.");
-                await approveMooch();
-                setIsVotingRunner(false);
-                return;
-            }
-
-            setMessage(`Voting for ${ticker}...`);
-            const tx = await moochRunnerContract.connect(signer).voteForRunner(ticker);
-            await tx.wait();
-            setMessage(`Successfully voted for ${ticker}!`);
-            fetchContractData(); // Refresh vote counts
-        } catch (error) {
-            console.error("Runner vote failed:", error);
-            setMessage(`Voting failed: ${error.message}`);
-        } finally {
-            setIsVotingRunner(false);
-        }
-    };
-
-    const handleVoteForMeme = async (memeId) => {
-        if (!moochRunnerContract || !signer || !account) {
-            setMessage("Wallet not connected.");
-            return;
-        }
-        setMessage(`Checking $mooch allowance for voting on meme ${memeId}...`);
-        setIsLoading(true); // General loading for voting
-
-        try {
-            const requiredAllowance = ethers.BigNumber.from(1).mul(ethers.BigNumber.from(10).pow(moochTokenDecimals)); // 1 $mooch
-            const currentAllowance = await moochTokenContract.allowance(account, MOOCH_RUNNER_CONTRACT_ADDRESS);
-
-            if (currentAllowance.lt(requiredAllowance)) {
-                setMessage("Please approve $mooch tokens for the contract first.");
-                await approveMooch();
-                setIsLoading(false);
-                return;
-            }
-
-            setMessage(`Voting for meme ${memeId}...`);
-            const tx = await moochRunnerContract.connect(signer).voteForMeme(memeId);
-            await tx.wait();
-            setMessage(`Successfully voted for meme ${memeId}!`);
-            fetchContractData(); // Refresh meme vote counts
-        } catch (error) {
-            console.error("Meme vote failed:", error);
-            setMessage(`Voting failed: ${error.message}`);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const handleEndCycle = async () => {
-        if (!moochRunnerContract || !signer || !account) {
-            setMessage("Wallet not connected.");
-            return;
-        }
-        setIsLoading(true);
-        setMessage("Attempting to end cycle and declare winners...");
-        try {
-            const tx = await moochRunnerContract.connect(signer).endCycle();
-            await tx.wait();
-            setMessage("Cycle ended and new cycle started successfully!");
-            fetchContractData(); // Refresh all data
-        } catch (error) {
-            console.error("End cycle failed:", error);
-            setMessage(`End cycle failed: ${error.message}. Ensure the prep phase is over or another user has already ended it.`);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    // Determine if an action is available based on current phase
-    const isMemeSubmissionOpen = currentCycleStatus === "Meme Submission" && timeRemaining > 0;
-    const isVotingOpen = currentCycleStatus === "Voting" && timeRemaining > 0;
-    const isPrepPhase = currentCycleStatus === "Prep"; // Prep phase just means it's the 23-24 hour mark
-    const isEndCyclePossible = currentCycleStatus === "Prep" && timeRemaining <= 0; // Can call endCycle when Prep time runs out
-
-    // --- Render Logic ---
-    if (isLoading && !account) {
-        return (
-            <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-purple-800 to-indigo-900 text-white">
-                <div className="text-xl">Loading dApp...</div>
+    <!-- Global Header/Navigation Bar -->
+    <header id="nav-header" class="fixed top-0 left-0 w-full bg-nav-bg text-white shadow-xl z-10" style="display: none;">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <a class="text-xl font-extrabold text-primary-red">AVAX Predict</a>
+                <nav class="flex space-x-4">
+                    <button onclick="renderPage('game')" class="nav-link text-white hover:text-primary-red transition duration-150 py-2 px-3 rounded-md text-sm font-medium">Game</button>
+                    <button onclick="renderPage('leaderboard')" class="nav-link text-white hover:text-primary-red transition duration-150 py-2 px-3 rounded-md text-sm font-medium">Leaderboard</button>
+                    <button onclick="renderPage('profile')" class="nav-link text-white hover:text-primary-red transition duration-150 py-2 px-3 rounded-md text-sm font-medium">Profile</button>
+                </nav>
+                <div id="nav-wallet-status" class="text-sm font-medium text-accent-red">...</div>
             </div>
-        );
-    }
+        </div>
+    </header>
 
-    return (
-        <div className="min-h-screen bg-gradient-to-br from-purple-800 to-indigo-900 text-white font-inter p-6 flex flex-col items-center">
-            <h1 className="text-5xl font-extrabold mb-8 text-center text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-red-600 rounded-lg p-2">
-                MOOCH RUNNER
+    <!-- Main Content Area -->
+    <div class="max-w-lg mx-auto p-4">
+
+        <!-- Home Page (Wallet Connect) -->
+        <section id="home-page" class="page-view bg-white rounded-xl shadow-2xl p-6 md:p-8 border border-accent-red">
+            <h1 class="text-3xl font-extrabold text-center text-primary-red mb-6">
+                Welcome to the AVAX Price Game
+            </h1>
+            
+            <div class="text-center mb-8">
+                <p class="text-lg text-gray-700 font-medium mb-4">Ready to start predicting? Connect your Web3 wallet to begin.</p>
+                <button id="connect-button" onclick="connectWallet()" class="w-full px-6 py-3 text-lg font-semibold rounded-xl bg-primary-red text-white hover:bg-red-700 transition duration-150 shadow-lg transform hover:scale-[1.02]">
+                    Connect Wallet
+                </button>
+                <p id="wallet-status" class="mt-4 text-sm font-medium text-gray-600">Status: Disconnected</p>
+            </div>
+
+            <div class="p-4 bg-accent-red/30 rounded-lg border border-primary-red/50">
+                <h3 class="text-lg font-bold text-primary-red mb-2">Summary of AVAX Predict</h3>
+                <p class="text-sm text-gray-700">
+                    AVAX Predict is a decentralized prediction market running on the Avalanche C-Chain. Users bet on whether the price of AVAX will go UP or DOWN in the next round. All bets contribute to a pool, and winners share the pool proportionally. Claim your winnings anytime. This DApp uses Supabase for fetching non-critical, off-chain data and Ethers.js for all on-chain interactions.
+                </p>
+            </div>
+        </section>
+
+        <!-- Game Page (Main Betting Interface) -->
+        <section id="game-page" class="page-view bg-white rounded-xl shadow-2xl p-6 md:p-8 border border-accent-red hidden">
+            <h1 class="text-3xl font-extrabold text-center text-primary-red mb-6">
+                Live Prediction Round
             </h1>
 
-            {!account ? (
-                <div className="bg-white bg-opacity-10 rounded-xl shadow-lg p-8 w-full max-w-md text-center border border-purple-500 transform transition-transform duration-300 hover:scale-105">
-                    <p className="text-xl mb-6">Connect your wallet to participate!</p>
-                    <button
-                        onClick={connectWallet}
-                        className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-bold py-3 px-6 rounded-full shadow-lg transition-all duration-300 transform hover:-translate-y-1"
-                    >
-                        Connect Wallet
+            <!-- Current Round Information -->
+            <div id="round-info" class="mb-6 space-y-4">
+                <h2 class="text-xl font-bold text-primary-red border-b border-accent-red pb-2">Round #<span id="round-id">...</span></h2>
+
+                <div class="flex justify-between text-lg font-medium">
+                    <p>Status:</p>
+                    <p id="round-status" class="text-primary-red">Loading...</p>
+                </div>
+                
+                <div class="flex justify-between text-lg font-medium">
+                    <p>Locks In:</p>
+                    <p id="countdown" class="font-extrabold text-primary-red">00:00</p>
+                </div>
+
+                <div class="bg-gray-100 p-4 rounded-lg flex justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-gray-600">Total UP Bets</p>
+                        <p id="up-pool" class="text-xl font-bold text-up-bet">0.00 AVAX</p>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-sm font-medium text-gray-600">Total DOWN Bets</p>
+                        <p id="down-pool" class="text-xl font-bold text-down-bet">0.00 AVAX</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Betting Interface -->
+            <div id="betting-interface" class="space-y-4">
+                <h2 class="text-xl font-bold text-primary-red border-b border-accent-red pb-2">Place Your Bet</h2>
+                
+                <input type="number" id="bet-amount" placeholder="Enter AVAX amount (e.g., 0.1)" min="0.001" step="0.001"
+                    class="w-full p-3 border-2 border-accent-red rounded-lg focus:ring-primary-red focus:border-primary-red transition duration-150">
+
+                <div class="flex space-x-4">
+                    <button onclick="placeBet(true)" id="bet-up-button" disabled
+                        class="flex-1 p-4 text-white font-bold text-xl rounded-xl shadow-lg transition duration-150 disabled:opacity-50 disabled:cursor-not-allowed bg-up-bet hover:bg-red-700">
+                        UP 🔺
                     </button>
-                    {message && <p className="mt-4 text-sm text-yellow-300">{message}</p>}
+                    <button onclick="placeBet(false)" id="bet-down-button" disabled
+                        class="flex-1 p-4 text-white font-bold text-xl rounded-xl shadow-lg transition duration-150 disabled:opacity-50 disabled:cursor-not-allowed bg-down-bet hover:bg-gray-600">
+                        DOWN 🔻
+                    </button>
                 </div>
-            ) : (
-                <div className="w-full max-w-5xl">
-                    <div className="bg-white bg-opacity-10 rounded-xl shadow-lg p-6 mb-8 border border-purple-500">
-                        <div className="flex justify-between items-center mb-4">
-                            <p className="text-lg">Connected: <span className="font-mono text-pink-300">{account.substring(0, 6)}...{account.substring(account.length - 4)}</span></p>
-                            <p className="text-lg">Chain ID: <span className="font-mono text-pink-300">{chainId} (Avalanche C-Chain)</span></p>
-                            <button
-                                onClick={disconnectWallet}
-                                className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-full transition-colors duration-200"
-                            >
-                                Disconnect
-                            </button>
-                        </div>
-                        <div className="text-center text-xl font-semibold mb-4 flex items-center justify-center">
-                            ⏰
-                            Current Phase: <span className="text-yellow-300 ml-2">{currentCycleStatus}</span> - Time Left: <span className="font-mono text-yellow-300 ml-2">{formatTime(timeRemaining)}</span>
-                        </div>
-                        {message && <p className="mt-2 text-center text-sm text-yellow-300">{message}</p>}
-                    </div>
+            </div>
 
-                    {/* Approve Mooch Section */}
-                    <div className="bg-white bg-opacity-10 rounded-xl shadow-lg p-6 mb-8 border border-purple-500">
-                        <h2 className="text-2xl font-semibold mb-4 text-center">Approve $MOOCH Token</h2>
-                        <p className="text-center mb-4">Before submitting memes or voting, you need to approve the Mooch Runner contract to spend your $mooch tokens. This is a one-time approval.</p>
-                        <button
-                            onClick={approveMooch}
-                            disabled={isLoading}
-                            className="w-full bg-gradient-to-r from-green-500 to-teal-600 hover:from-green-600 hover:to-teal-700 text-white font-bold py-3 px-6 rounded-full shadow-lg transition-all duration-300 transform hover:-translate-y-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            {isLoading ? "Approving..." : "Approve $MOOCH"}
-                        </button>
-                    </div>
-
-                    {/* Cycle End Button (for testing/automation) */}
-                    {isEndCyclePossible && (
-                        <div className="bg-white bg-opacity-10 rounded-xl shadow-lg p-6 mb-8 border border-purple-500 text-center">
-                            <h2 className="text-2xl font-semibold mb-4">Cycle Ready to End!</h2>
-                            <p className="mb-4">The previous cycle has concluded. Anyone can call `endCycle` to process results and start the next cycle.</p>
-                            <button
-                                onClick={handleEndCycle}
-                                disabled={isLoading}
-                                className="bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-white font-bold py-3 px-6 rounded-full shadow-lg transition-all duration-300 transform hover:-translate-y-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                {isLoading ? "Processing Cycle..." : "End Cycle & Start New Day"}
-                            </button>
-                        </div>
-                    )}
-
-                    {/* Last Cycle Winners */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-                        <div className="bg-white bg-opacity-10 rounded-xl shadow-lg p-6 border border-purple-500">
-                            <h2 className="text-2xl font-semibold mb-4 text-center flex items-center justify-center">
-                                ⭐ Last Runner of the Day
-                            </h2>
-                            {lastRunner.ticker && lastRunner.ticker !== "" ? (
-                                <p className="text-center text-xl font-bold text-yellow-300">{lastRunner.ticker} ({lastRunner.votes} votes)</p>
-                            ) : (
-                                <p className="text-center text-lg text-gray-300">No runner determined yet.</p>
-                            )}
-                        </div>
-                        <div className="bg-white bg-opacity-10 rounded-xl shadow-lg p-6 border border-purple-500">
-                            <h2 className="text-2xl font-semibold mb-4 text-center flex items-center justify-center">
-                                ⭐ Last Meme of the Day
-                            </h2>
-                            {lastMeme ? (
-                                <div className="text-center">
-                                    <p className="text-lg font-bold text-yellow-300">{lastMeme.name} ({lastMeme.votes} votes)</p>
-                                    <p className="text-sm text-gray-300">Ticker: {lastMeme.ticker}</p>
-                                    <img
-                                        src={`https://ipfs.io/ipfs/${lastMeme.ipfsHash}`} // Public IPFS gateway
-                                        alt={lastMeme.name}
-                                        className="mt-4 mx-auto max-h-48 rounded-lg shadow-md"
-                                        onError={(e) => { e.target.onerror = null; e.target.src = "https://placehold.co/150x150/8a2be2/ffffff?text=Image+Error"; }}
-                                    />
-                                    {lastMeme.xLink && (
-                                        <a href={lastMeme.xLink} target="_blank" rel="noopener noreferrer" className="text-blue-300 hover:underline mt-2 inline-block">
-                                            View on X
-                                        </a>
-                                    )}
-                                </div>
-                            ) : (
-                                <p className="text-center text-lg text-gray-300">No meme determined yet.</p>
-                            )}
-                        </div>
-                    </div>
-
-
-                    {/* Meme Submission Section */}
-                    <div className="bg-white bg-opacity-10 rounded-xl shadow-lg p-6 mb-8 border border-purple-500">
-                        <h2 className="text-2xl font-semibold mb-4 text-center flex items-center justify-center">
-                            ⬆️ Submit Your Meme
-                        </h2>
-                        {!isMemeSubmissionOpen && <p className="text-center text-red-300 mb-4">Meme submission is currently closed.</p>}
-                        <form onSubmit={handleSubmitMeme} className="space-y-4">
-                            <div>
-                                <label htmlFor="memeTicker" className="block text-lg font-medium mb-2">Ticker</label>
-                                <input
-                                    type="text"
-                                    id="memeTicker"
-                                    value={memeTicker}
-                                    onChange={(e) => setMemeTicker(e.target.value)}
-                                    className="w-full p-3 rounded-md bg-white bg-opacity-5 border border-purple-400 text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                    placeholder="e.g., AVAX, BTC"
-                                    required
-                                    disabled={!isMemeSubmissionOpen || isSubmittingMeme}
-                                />
-                            </div>
-                            <div>
-                                <label htmlFor="memeName" className="block text-lg font-medium mb-2">Meme Name</label>
-                                <input
-                                    type="text"
-                                    id="memeName"
-                                    value={memeName}
-                                    onChange={(e) => setMemeName(e.target.value)}
-                                    className="w-full p-3 rounded-md bg-white bg-opacity-5 border border-purple-400 text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                    placeholder="e.g., Diamond Hands"
-                                    required
-                                    disabled={!isMemeSubmissionOpen || isSubmittingMeme}
-                                />
-                            </div>
-                            <div>
-                                <label htmlFor="memeImage" className="block text-lg font-medium mb-2">Meme Image (PNG/JPG)</label>
-                                <input
-                                    type="file"
-                                    id="memeImage"
-                                    accept="image/png, image/jpeg"
-                                    onChange={handleImageChange}
-                                    className="w-full p-3 rounded-md bg-white bg-opacity-5 border border-purple-400 text-white file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-500 file:text-white hover:file:bg-blue-600 cursor-pointer"
-                                    required
-                                    disabled={!isMemeSubmissionOpen || isSubmittingMeme}
-                                />
-                                {memeImagePreview && (
-                                    <img src={memeImagePreview} alt="Meme Preview" className="mt-4 max-h-48 mx-auto rounded-lg shadow-md" />
-                                )}
-                            </div>
-                            <div>
-                                <label htmlFor="memeXLink" className="block text-lg font-medium mb-2">Optional X (Twitter) Link</label>
-                                <input
-                                    type="url"
-                                    id="memeXLink"
-                                    value={memeXLink}
-                                    onChange={(e) => setMemeXLink(e.target.value)}
-                                    className="w-full p-3 rounded-md bg-white bg-opacity-5 border border-purple-400 text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                    placeholder="e.g., https://twitter.com/..."
-                                    disabled={!isMemeSubmissionOpen || isSubmittingMeme}
-                                />
-                            </div>
-                            <button
-                                type="submit"
-                                disabled={!isMemeSubmissionOpen || isSubmittingMeme}
-                                className="w-full bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white font-bold py-3 px-6 rounded-full shadow-lg transition-all duration-300 transform hover:-translate-y-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                {isSubmittingMeme ? "Submitting..." : "Submit Meme (1 $MOOCH)"}
-                            </button>
-                        </form>
-                    </div>
-
-                    {/* Runner Voting Section */}
-                    <div className="bg-white bg-opacity-10 rounded-xl shadow-lg p-6 mb-8 border border-purple-500">
-                        <h2 className="text-2xl font-semibold mb-4 text-center flex items-center justify-center">
-                            🚀 Vote for Runner of the Day
-                        </h2>
-                        {!isVotingOpen && <p className="text-center text-red-300 mb-4">Runner voting is currently closed.</p>}
-                        
-                        {runnerCandidates.length > 0 ? (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {runnerCandidates.map((ticker, index) => (
-                                    <div key={index} className="bg-white bg-opacity-15 p-4 rounded-lg flex justify-between items-center border border-gray-600">
-                                        <span className="font-bold text-xl">{ticker}</span>
-                                        <span className="text-lg text-gray-300">Votes: {runnerVoteCounts[ticker] || 0}</span>
-                                        <button
-                                            onClick={() => handleVoteForRunner(ticker)}
-                                            disabled={!isVotingOpen || isVotingRunner}
-                                            className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-full transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                                        >
-                                            Vote (1 $MOOCH)
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <p className="text-center text-lg text-gray-300">No runners to vote for yet. Be the first to vote for a ticker!</p>
-                        )}
-                         <div className="mt-6">
-                            <input
-                                type="text"
-                                value={newRunnerTicker}
-                                onChange={(e) => setNewRunnerTicker(e.target.value.toUpperCase())}
-                                placeholder="Enter Ticker (e.g., SOL, ADA)"
-                                className="w-full p-3 rounded-md bg-white bg-opacity-5 border border-purple-400 text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                disabled={!isVotingOpen || isVotingRunner}
-                            />
-                            <button
-                                onClick={() => handleVoteForRunner(newRunnerTicker)}
-                                disabled={!isVotingOpen || isVotingRunner || newRunnerTicker.trim() === ''}
-                                className="w-full mt-4 bg-gradient-to-r from-teal-500 to-cyan-600 hover:from-teal-600 hover:to-cyan-700 text-white font-bold py-3 px-6 rounded-full shadow-lg transition-all duration-300 transform hover:-translate-y-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                Vote for New Runner (1 $MOOCH)
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Meme Voting Section / Gallery */}
-                    <div className="bg-white bg-opacity-10 rounded-xl shadow-lg p-6 border border-purple-500">
-                        <h2 className="text-2xl font-semibold mb-4 text-center flex items-center justify-center">
-                            ✨ Vote for Memes
-                        </h2>
-                        {!isVotingOpen && <p className="text-center text-red-300 mb-4">Meme voting is currently closed.</p>}
-                        
-                        {activeMemes.length > 0 ? (
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                {activeMemes.map((meme, index) => (
-                                    <div 
-                                        key={meme.id !== undefined ? meme.id : index} // Use meme.id from contract if available, fallback to index
-                                        className="bg-white bg-opacity-15 rounded-lg shadow-md overflow-hidden transform transition-transform duration-300 hover:scale-105 cursor-pointer border border-gray-600 flex flex-col"
-                                        onClick={() => { setSelectedMeme(meme); setShowMemeDetail(true); }}
-                                    >
-                                        <img 
-                                            src={`https://ipfs.io/ipfs/${meme.ipfsHash}`} 
-                                            alt={meme.name} 
-                                            className="w-full h-48 object-cover object-center"
-                                            onError={(e) => { e.target.onerror = null; e.target.src = "https://placehold.co/200x150/8a2be2/ffffff?text=Image+Error"; }}
-                                        />
-                                        <div className="p-4 flex-grow flex flex-col justify-between">
-                                            <div>
-                                                <h3 className="text-xl font-bold mb-1">{meme.name}</h3>
-                                                <p className="text-sm text-gray-300">Ticker: {meme.ticker}</p>
-                                                <p className="text-md text-gray-200 mt-2">Votes: {meme.votes.toString()}</p>
-                                            </div>
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); handleVoteForMeme(meme.id); }} // Stop propagation to prevent opening detail
-                                                disabled={!isVotingOpen || isLoading}
-                                                className="mt-4 w-full bg-pink-500 hover:bg-pink-600 text-white font-bold py-2 px-4 rounded-full transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                                            >
-                                                Vote (1 $MOOCH)
-                                            </button>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <p className="text-center text-lg text-gray-300">No memes submitted for this cycle yet.</p>
-                        )}
-                    </div>
-
-                    {/* Meme Detail Modal */}
-                    {showMemeDetail && selectedMeme && (
-                        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50">
-                            <div className="bg-white bg-opacity-20 rounded-xl shadow-2xl p-6 relative w-full max-w-2xl border border-purple-400">
-                                <button
-                                    onClick={() => setShowMemeDetail(false)}
-                                    className="absolute top-4 right-4 text-white text-2xl hover:text-red-400 transition-colors"
-                                >
-                                    ✖️
-                                </button>
-                                <h3 className="text-3xl font-bold mb-4 text-center text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-red-600">{selectedMeme.name}</h3>
-                                <div className="text-center mb-4">
-                                    <p className="text-lg text-gray-200">Ticker: <span className="font-bold">{selectedMeme.ticker}</span></p>
-                                    <p className="text-lg text-gray-200">Votes: <span className="font-bold">{selectedMeme.votes.toString()}</span></p>
-                                </div>
-                                <img
-                                    src={`https://ipfs.io/ipfs/${selectedMeme.ipfsHash}`}
-                                    alt={selectedMeme.name}
-                                    className="w-full max-h-96 object-contain rounded-lg shadow-lg mx-auto"
-                                    onError={(e) => { e.target.onerror = null; e.target.src = "https://placehold.co/400x300/8a2be2/ffffff?text=Image+Error"; }}
-                                />
-                                {selectedMeme.xLink && (
-                                    <div className="text-center mt-4">
-                                        <a
-                                            href={selectedMeme.xLink}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="text-blue-300 hover:underline text-lg font-semibold"
-                                        >
-                                            View on X (Twitter)
-                                        </a>
-                                    </div>
-                                )}
-                                <div className="mt-6 flex justify-center">
-                                    <button
-                                        onClick={() => setShowMemeDetail(false)}
-                                        className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-6 rounded-full transition-colors duration-200"
-                                    >
-                                        Back
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
+            <div class="border-t border-accent-red my-6 pt-6">
+                <h2 class="text-xl font-bold text-primary-red mb-4">Your Winnings</h2>
+                <div class="flex justify-between items-center bg-gray-100 p-4 rounded-lg">
+                    <p class="text-xl font-bold text-gray-800"><span id="winnings-balance">0.00</span> AVAX</p>
+                    <button id="claim-button" onclick="claimWinnings()" disabled
+                        class="px-4 py-2 text-sm font-semibold rounded-full bg-primary-red text-white hover:bg-red-700 transition duration-150 shadow-md disabled:opacity-50">
+                        Claim All
+                    </button>
                 </div>
-            )}
+            </div>
+        </section>
+
+        <!-- Profile Page -->
+        <section id="profile-page" class="page-view bg-white rounded-xl shadow-2xl p-6 md:p-8 border border-accent-red hidden">
+            <h1 class="text-3xl font-extrabold text-center text-primary-red mb-6">
+                Your Profile & Stats
+            </h1>
+            <div class="space-y-4">
+                <p class="text-center text-gray-700">Wallet: <span id="profile-address" class="font-mono text-primary-red">...</span></p>
+                <div class="bg-accent-red/30 p-4 rounded-lg">
+                    <h3 class="text-xl font-bold text-primary-red mb-2">Summary</h3>
+                    <p>Total Winnings: <span class="font-semibold">0.00 AVAX (Placeholder)</span></p>
+                    <p>Win Rate: <span class="font-semibold">0% (Placeholder)</span></p>
+                    <p>Rounds Played: <span class="font-semibold">0 (Placeholder)</span></p>
+                </div>
+                <h3 class="text-xl font-bold text-primary-red border-b border-accent-red pb-2">Recent Bets</h3>
+                <p class="text-sm text-gray-500">
+                    This area will load your historical bets from Supabase after we implement the data synchronization.
+                </p>
+            </div>
+        </section>
+
+        <!-- Leaderboard Page -->
+        <section id="leaderboard-page" class="page-view bg-white rounded-xl shadow-2xl p-6 md:p-8 border border-accent-red hidden">
+            <h1 class="text-3xl font-extrabold text-center text-primary-red mb-6">
+                Top Predictors
+            </h1>
+            <div class="space-y-2">
+                <div class="flex justify-between font-bold text-primary-red border-b-2 border-accent-red pb-1">
+                    <span>Rank</span>
+                    <span>Player</span>
+                    <span>PNL (AVAX)</span>
+                </div>
+                <div class="text-gray-600 space-y-2" id="leaderboard-list">
+                    <p class="py-2 px-3 bg-gray-100 rounded">1. Player X... (Placeholder) - 100 AVAX</p>
+                    <p class="py-2 px-3 bg-gray-100 rounded">2. Player Y... (Placeholder) - 50 AVAX</p>
+                    <p class="py-2 px-3 bg-gray-100 rounded">3. Player Z... (Placeholder) - 25 AVAX</p>
+                    <p class="text-sm text-gray-500 mt-4">Leaderboard data will be retrieved directly from Supabase.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Global Message/Error Box -->
+        <div id="message-box" class="mt-6 text-sm p-3 rounded-lg hidden" role="alert"></div>
+
+    </div>
+
+    <!-- Custom Modal Structure -->
+    <div id="wallet-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 hidden flex items-center justify-center z-50">
+        <div class="bg-white rounded-xl shadow-2xl p-6 w-11/12 max-w-sm transform transition-all">
+            <h3 id="modal-title" class="text-xl font-bold text-primary-red mb-4 border-b border-accent-red pb-2">Modal Title</h3>
+            <p id="modal-message" class="text-gray-700 mb-6">Modal Message</p>
+            <button onclick="hideModal()" class="w-full py-2 bg-primary-red text-white rounded-lg font-semibold hover:bg-red-700 transition duration-150">
+                Close
+            </button>
         </div>
-    );
-};
+    </div>
 
-export default App;
+    <script type="module">
+        // --- MANDATORY CANVAS GLOBALS (Needed for the environment) ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        let db, auth; // Firebase services
+
+        // --- CONTRACT & SUPABASE CONFIG ---
+        const CONTRACT_ADDRESS = '0xDab32694450c84E69445561870c35ECE0a15b965';
+        
+        // Avalanche C-Chain Details (required for network switching)
+        const AVAX_CHAIN_ID = 43114; // Decimal
+        const AVAX_CHAIN_ID_HEX = '0xa86a'; // Hexadecimal
+        const AVAX_RPC = 'https://api.avax.network/ext/bc/C/rpc';
+
+        // Your provided Supabase credentials
+        const SUPABASE_URL = 'https://sqlefadldljibxopfwcv.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNxbGVmYWRsZGxqaWJ4b3Bmd2N2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEzNzI4NzMsImV4cCI6MjA3Njk0ODg3M30.JdkvmsC_bX_dK7uQPhNBxB4_7-0Cn0-KmRR0UjmpdKI';
+
+        // Contract ABI (Simplified for necessary functions)
+        const CONTRACT_ABI = JSON.parse(`[
+            {"inputs":[{"internalType":"uint256","name":"_roundId","type":"uint256"},{"internalType":"bool","name":"_isUpPrediction","type":"bool"}],"name":"bet","outputs":[],"stateMutability":"payable","type":"function"},
+            {"inputs":[],"name":"claimWinnings","outputs":[],"stateMutability":"nonpayable","type":"function"},
+            {"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"roundId","type":"uint256"},{"indexed":true,"internalType":"address","name":"player","type":"address"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"}],"name":"PayoutCalculated","type":"event"},
+            {"inputs":[],"name":"currentRoundId","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+            {"inputs":[{"internalType":"uint256","name":"","type":"uint256"}],"name":"bettingRounds","outputs":[{"internalType":"uint256","name":"roundId","type":"uint256"},{"internalType":"uint256","name":"startTime","type":"uint256"},{"internalType":"uint256","name":"closeTime","type":"uint256"},{"internalType":"uint256","name":"lockPrice","type":"uint256"},{"internalType":"uint256","name":"settlementPrice","type":"uint256"},{"internalType":"uint256","name":"totalUpBets","type":"uint256"},{"internalType":"uint256","name":"totalDownBets","type":"uint256"},{"internalType":"bool","name":"isSettled","type":"bool"}],"stateMutability":"view","type":"function"},
+            {"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"winnings","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"}
+        ]`);
+
+        // Global State Variables
+        let provider;
+        let signer;
+        let contract;
+        let userAddress = null;
+        let supabase;
+        let currentPage = 'home'; // Tracks the current visible page
+        
+        let currentRound = {
+            id: 0,
+            closeTime: 0,
+            totalUpBets: 0,
+            totalDownBets: 0,
+            isSettled: true,
+        };
+
+        // --- UTILITY FUNCTIONS ---
+
+        function showModal(title, message) {
+            document.getElementById('modal-title').textContent = title;
+            document.getElementById('modal-message').textContent = message;
+            document.getElementById('wallet-modal').classList.remove('hidden');
+        }
+
+        function hideModal() {
+            document.getElementById('wallet-modal').classList.add('hidden');
+        }
+
+        function showMessage(message, type = 'info') {
+            const box = document.getElementById('message-box');
+            box.textContent = message;
+            box.classList.remove('hidden', 'bg-red-100', 'text-red-700', 'bg-green-100', 'text-green-700', 'bg-blue-100', 'text-blue-700');
+            box.classList.add('p-3');
+            
+            if (type === 'error') {
+                box.classList.add('bg-red-100', 'text-primary-red', 'border', 'border-primary-red/50');
+            } else if (type === 'success') {
+                box.classList.add('bg-green-100', 'text-green-700');
+            } else {
+                box.classList.add('bg-accent-red/50', 'text-gray-700');
+            }
+        }
+
+        function formatAddress(address) {
+            if (!address) return 'N/A';
+            return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
+        }
+
+        function formatAvax(wei) {
+            if (wei === undefined || wei === null) return '0.00';
+            const etherString = ethers.formatEther(wei);
+            // Truncate to 4 decimal places for cleaner UI, unless it's a very large number
+            const parts = etherString.split('.');
+            if (parts.length === 2) {
+                return parts[0] + '.' + parts[1].substring(0, 4);
+            }
+            return etherString;
+        }
+
+        // --- PAGE ROUTING LOGIC ---
+
+        function renderPage(pageName) {
+            if (pageName !== 'home' && !userAddress) {
+                showModal("Access Denied", "Please connect your wallet to access the DApp features.");
+                return;
+            }
+
+            currentPage = pageName;
+            
+            document.querySelectorAll('.page-view').forEach(page => {
+                page.classList.add('hidden');
+            });
+
+            const targetPage = document.getElementById(`${pageName}-page`);
+            if (targetPage) {
+                targetPage.classList.remove('hidden');
+            }
+
+            // Update navigation bar visibility and status
+            if (userAddress) {
+                document.getElementById('nav-header').style.display = 'block';
+            } else {
+                document.getElementById('nav-header').style.display = 'none';
+            }
+            
+            // Special update for Profile page
+            if (pageName === 'profile' && userAddress) {
+                document.getElementById('profile-address').textContent = userAddress;
+            }
+        }
+
+        // --- WEB3 / WALLET LOGIC ---
+
+        async function connectWallet() {
+            if (!window.ethereum) {
+                showModal("Wallet Not Found", "No injected wallet found. Please install MetaMask or TrustWallet extension.");
+                return;
+            }
+
+            try {
+                const ethProvider = window.ethereum;
+
+                // 1. Switch or Add Avalanche C-Chain
+                const currentChainId = Number(ethProvider.networkVersion || ethProvider.chainId);
+                
+                if (currentChainId !== AVAX_CHAIN_ID) {
+                    try {
+                        await ethProvider.request({
+                            method: 'wallet_switchEthereumChain',
+                            params: [{ chainId: AVAX_CHAIN_ID_HEX }] 
+                        });
+                    } catch (e) {
+                        // This error code means the chain is not in the wallet, so add it
+                        if (e.code === 4902) {
+                            await ethProvider.request({
+                                method: 'wallet_addEthereumChain',
+                                params: [{
+                                    chainId: AVAX_CHAIN_ID_HEX,
+                                    chainName: 'Avalanche C-Chain',
+                                    nativeCurrency: { name: 'Avalanche', symbol: 'AVAX', decimals: 18 },
+                                    rpcUrls: [AVAX_RPC],
+                                    blockExplorerUrls: ['https://snowtrace.io']
+                                }]
+                            });
+                        } else {
+                            showModal("Network Switch Failed", "Failed to switch networks. Please switch to Avalanche C-Chain manually in your wallet.");
+                            return;
+                        }
+                    }
+                }
+                
+                // 2. Request account access
+                await ethProvider.request({ method: 'eth_requestAccounts' });
+
+                // 3. Ethers.js setup
+                provider = new ethers.BrowserProvider(ethProvider);
+                signer = await provider.getSigner();
+                userAddress = await signer.getAddress();
+                
+                // 4. Contract initialization and UI update
+                contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+
+                const formattedAddress = formatAddress(userAddress);
+                document.getElementById('wallet-status').textContent = `Connected: ${formattedAddress}`;
+                document.getElementById('nav-wallet-status').textContent = formattedAddress;
+
+                showMessage('Wallet connected successfully! Welcome to the game.', 'success');
+                
+                renderPage('game');
+
+                // Set up listener for account changes
+                window.ethereum.on('accountsChanged', (accounts) => {
+                    if (accounts.length > 0) {
+                        connectWallet(); 
+                    } else {
+                        // Disconnected
+                        location.reload(); 
+                    }
+                });
+
+                // Set up listener for network changes
+                window.ethereum.on('chainChanged', (chainId) => {
+                    if (Number(chainId) !== AVAX_CHAIN_ID) {
+                        showModal("Wrong Network", "Please switch back to the Avalanche C-Chain (43114) to continue playing.");
+                    }
+                    connectWallet(); // Re-initialize everything
+                });
+
+
+                // Initial data load after connection
+                fetchContractData();
+            } catch (error) {
+                console.error("Connection error:", error);
+                // Use showModal for critical connection errors
+                showModal("Connection Failed", error.message || 'An unknown error occurred during connection.');
+            }
+        }
+
+        async function fetchContractData() {
+            if (!provider || !contract) return;
+            
+            try {
+                // 1. Get current round ID
+                // Note: using provider here as it's a view function, safer if signer is temporarily lost
+                const currentIdBigInt = await contract.currentRoundId();
+                const currentId = Number(currentIdBigInt);
+
+                // 2. Get round details
+                const roundData = await contract.bettingRounds(currentId);
+                
+                currentRound.id = currentId;
+                currentRound.startTime = Number(roundData.startTime) * 1000;
+                currentRound.closeTime = Number(roundData.closeTime) * 1000;
+                currentRound.totalUpBets = roundData.totalUpBets;
+                currentRound.totalDownBets = roundData.totalDownBets;
+                currentRound.isSettled = roundData.isSettled;
+
+                // 3. Get user winnings
+                if (userAddress) {
+                    const userWinnings = await contract.winnings(userAddress);
+                    document.getElementById('winnings-balance').textContent = formatAvax(userWinnings);
+                    document.getElementById('claim-button').disabled = userWinnings === 0n;
+                }
+
+                updateUI();
+            } catch (error) {
+                 console.error("Error fetching contract data:", error);
+                 if (currentRound.id === 0) {
+                    document.getElementById('round-status').textContent = 'Waiting for Round Start (Owner)';
+                    document.getElementById('countdown').textContent = 'N/A';
+                 }
+                 // If the contract is not initialized or on the wrong network, this will fail.
+            }
+        }
+
+        function updateUI() {
+            const now = Date.now();
+            const timeRemaining = Math.max(0, currentRound.closeTime - now);
+            const seconds = Math.floor((timeRemaining / 1000) % 60);
+            const minutes = Math.floor((timeRemaining / 1000) / 60);
+            const countdownText = timeRemaining > 0 ? 
+                `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}` : 
+                'CLOSED';
+            
+            document.getElementById('round-id').textContent = currentRound.id;
+            document.getElementById('countdown').textContent = countdownText;
+            document.getElementById('up-pool').textContent = `${formatAvax(currentRound.totalUpBets)} AVAX`;
+            document.getElementById('down-pool').textContent = `${formatAvax(currentRound.totalDownBets)} AVAX`;
+
+            const isOpen = timeRemaining > 0 && currentRound.id > 0 && !currentRound.isSettled;
+            document.getElementById('round-status').textContent = isOpen ? 'OPEN' : (currentRound.isSettled ? 'SETTLED' : 'CLOSED');
+            
+            const betButtonsDisabled = !signer || !isOpen;
+            document.getElementById('bet-up-button').disabled = betButtonsDisabled;
+            document.getElementById('bet-down-button').disabled = betButtonsDisabled;
+        }
+
+        async function placeBet(isUpPrediction) {
+            if (!signer) {
+                showModal("Wallet Disconnected", "Please connect your wallet first to place a bet.");
+                return;
+            }
+
+            const amountElement = document.getElementById('bet-amount');
+            const amountAvax = amountElement.value;
+
+            if (amountAvax <= 0) {
+                showMessage("Please enter a valid amount.", 'error');
+                return;
+            }
+
+            try {
+                const amountWei = ethers.parseEther(amountAvax);
+                
+                showMessage(`Sending transaction to bet ${amountAvax} AVAX on ${isUpPrediction ? 'UP' : 'DOWN'}...`);
+
+                const tx = await contract.bet(currentRound.id, isUpPrediction, { value: amountWei });
+                
+                showMessage(`Transaction sent: ${tx.hash}. Waiting for confirmation...`, 'info');
+                
+                await tx.wait();
+
+                showMessage('Bet placed successfully!', 'success');
+                amountElement.value = ''; // Clear input
+                fetchContractData(); // Refresh pools
+            } catch (error) {
+                console.error("Bet transaction failed:", error);
+                showMessage(`Bet failed: ${error.reason || error.message.substring(0, 100)}`, 'error');
+            }
+        }
+
+        async function claimWinnings() {
+            if (!signer) {
+                showModal("Wallet Disconnected", "Please connect your wallet first to claim your winnings.");
+                return;
+            }
+
+            try {
+                showMessage('Sending transaction to claim winnings...');
+                
+                document.getElementById('claim-button').disabled = true;
+                
+                const tx = await contract.claimWinnings();
+
+                showMessage(`Claim transaction sent: ${tx.hash}. Waiting for confirmation...`, 'info');
+
+                await tx.wait();
+
+                showMessage('Winnings claimed successfully! Check your wallet balance.', 'success');
+                fetchContractData(); // Refresh winnings balance
+            } catch (error) {
+                console.error("Claim transaction failed:", error);
+                showMessage(`Claim failed: ${error.reason || error.message.substring(0, 100)}`, 'error');
+            } finally {
+                 document.getElementById('claim-button').disabled = false;
+            }
+        }
+
+        // This function is required by the environment but uses the Supabase client
+        function createClient(url, key) {
+            if (window.supabase) {
+                return window.supabase.createClient(url, key);
+            }
+            // Supabase is loaded via CDN, so it's globally available
+            return Supabase.createClient(url, key);
+        }
+
+        // --- INITIALIZATION ---
+
+        window.onload = function() {
+            try {
+                // Initialize Supabase client
+                supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                console.log("Supabase client initialized.");
+
+                // Start the UI update loop
+                setInterval(fetchContractData, 5000); // Poll data every 5 seconds
+                
+                // Set initial view to Home page
+                renderPage('home');
+                fetchContractData();
+
+            } catch (error) {
+                console.error("Initialization Error (Supabase/Firebase):", error);
+                showMessage(`Initialization error: ${error.message}. Check console for details.`, 'error');
+            }
+        };
+        
+        // --- EXPOSE GLOBAL FUNCTIONS (Required for inline HTML onclick attributes) ---
+        window.connectWallet = connectWallet;
+        window.renderPage = renderPage;
+        window.placeBet = placeBet;
+        window.claimWinnings = claimWinnings;
+        window.hideModal = hideModal;
+
+    </script>
+</body>
+</html>
