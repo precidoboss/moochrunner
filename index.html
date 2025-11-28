@@ -3,556 +3,648 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AVAX Price Predictor</title>
-    <!-- Load Tailwind CSS -->
+    <title>$VCNEWS Presale on Cronos</title>
+    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Load Ethers.js for Web3 interaction -->
-    <script src="https://cdn.jsdelivr.net/npm/ethers@6.10.0/dist/ethers.umd.min.js"></script>
-    <!-- Load Supabase Client -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        'primary-red': '#B91C1C', // Deep Red
-                        'accent-red': '#FCA5A5', // Light Red for background/highlights
-                        'up-bet': '#B91C1C',    // Strong Red for UP
-                        'down-bet': '#4B5563',  // Dark Gray for DOWN (to contrast with red, avoiding other colors)
-                        'nav-bg': '#374151',    // Dark background for navigation
-                    },
-                    fontFamily: {
-                        sans: ['Inter', 'sans-serif'],
-                    }
-                }
-            }
+    <!-- Ethers.js CDN for Web3 interaction -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+    <style>
+        /* Custom styles for the news aesthetic and sleek design */
+        @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@300;500;700&family=Playfair+Display:wght@700&display=swap');
+        
+        :root {
+            --color-primary: #0077b6; /* Professional Blue */
+            --color-dark: #1a1a1a;    /* Near-Black */
+            --color-light: #f4f4f4;   /* Off-White */
+            --color-accent: #ffb700;  /* Gold/Yellow for alerts/highlights */
         }
-    </script>
+        
+        body {
+            font-family: 'Roboto Mono', monospace; /* Monospace for a code/news terminal feel */
+            background-color: var(--color-dark);
+            color: var(--color-light);
+            line-height: 1.6;
+        }
+
+        .header-font {
+            font-family: 'Playfair Display', serif; /* Serif for headlines/titles */
+        }
+
+        .progress-bar-container {
+            height: 12px;
+            background-color: #333;
+            border-radius: 6px;
+            overflow: hidden;
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--color-primary), #00b4d8);
+            transition: width 0.8s ease-in-out;
+            border-radius: 6px;
+        }
+
+        .tab-content.active {
+            display: block;
+            animation: fadeIn 0.4s ease-out;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Modal styling */
+        .modal-backdrop {
+            background-color: rgba(0, 0, 0, 0.75);
+            z-index: 50;
+        }
+
+        .news-button {
+            transition: all 0.2s;
+            box-shadow: 0 4px var(--color-primary);
+        }
+        .news-button:hover {
+            box-shadow: 0 2px var(--color-primary);
+            transform: translateY(2px);
+        }
+        .news-button:active {
+            box-shadow: none;
+            transform: translateY(4px);
+        }
+    </style>
 </head>
-<body class="bg-gray-50 font-sans text-gray-800 min-h-screen pt-16">
+<body class="min-h-screen">
 
-    <!-- Global Header/Navigation Bar -->
-    <header id="nav-header" class="fixed top-0 left-0 w-full bg-nav-bg text-white shadow-xl z-10" style="display: none;">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex justify-between items-center h-16">
-                <a class="text-xl font-extrabold text-primary-red">AVAX Predict</a>
-                <nav class="flex space-x-4">
-                    <button onclick="renderPage('game')" class="nav-link text-white hover:text-primary-red transition duration-150 py-2 px-3 rounded-md text-sm font-medium">Game</button>
-                    <button onclick="renderPage('leaderboard')" class="nav-link text-white hover:text-primary-red transition duration-150 py-2 px-3 rounded-md text-sm font-medium">Leaderboard</button>
-                    <button onclick="renderPage('profile')" class="nav-link text-white hover:text-primary-red transition duration-150 py-2 px-3 rounded-md text-sm font-medium">Profile</button>
-                </nav>
-                <div id="nav-wallet-status" class="text-sm font-medium text-accent-red">...</div>
-            </div>
-        </div>
-    </header>
-
-    <!-- Main Content Area -->
-    <div class="max-w-lg mx-auto p-4">
-
-        <!-- Home Page (Wallet Connect) -->
-        <section id="home-page" class="page-view bg-white rounded-xl shadow-2xl p-6 md:p-8 border border-accent-red">
-            <h1 class="text-3xl font-extrabold text-center text-primary-red mb-6">
-                Welcome to the AVAX Price Game
-            </h1>
-            
-            <div class="text-center mb-8">
-                <p class="text-lg text-gray-700 font-medium mb-4">Ready to start predicting? Connect your Web3 wallet to begin.</p>
-                <button id="connect-button" onclick="connectWallet()" class="w-full px-6 py-3 text-lg font-semibold rounded-xl bg-primary-red text-white hover:bg-red-700 transition duration-150 shadow-lg transform hover:scale-[1.02]">
-                    Connect Wallet
-                </button>
-                <p id="wallet-status" class="mt-4 text-sm font-medium text-gray-600">Status: Disconnected</p>
-            </div>
-
-            <div class="p-4 bg-accent-red/30 rounded-lg border border-primary-red/50">
-                <h3 class="text-lg font-bold text-primary-red mb-2">Summary of AVAX Predict</h3>
-                <p class="text-sm text-gray-700">
-                    AVAX Predict is a decentralized prediction market running on the Avalanche C-Chain. Users bet on whether the price of AVAX will go UP or DOWN in the next round. All bets contribute to a pool, and winners share the pool proportionally. Claim your winnings anytime. This DApp uses Supabase for fetching non-critical, off-chain data and Ethers.js for all on-chain interactions.
-                </p>
-            </div>
-        </section>
-
-        <!-- Game Page (Main Betting Interface) -->
-        <section id="game-page" class="page-view bg-white rounded-xl shadow-2xl p-6 md:p-8 border border-accent-red hidden">
-            <h1 class="text-3xl font-extrabold text-center text-primary-red mb-6">
-                Live Prediction Round
-            </h1>
-
-            <!-- Current Round Information -->
-            <div id="round-info" class="mb-6 space-y-4">
-                <h2 class="text-xl font-bold text-primary-red border-b border-accent-red pb-2">Round #<span id="round-id">...</span></h2>
-
-                <div class="flex justify-between text-lg font-medium">
-                    <p>Status:</p>
-                    <p id="round-status" class="text-primary-red">Loading...</p>
-                </div>
-                
-                <div class="flex justify-between text-lg font-medium">
-                    <p>Locks In:</p>
-                    <p id="countdown" class="font-extrabold text-primary-red">00:00</p>
-                </div>
-
-                <div class="bg-gray-100 p-4 rounded-lg flex justify-between">
-                    <div>
-                        <p class="text-sm font-medium text-gray-600">Total UP Bets</p>
-                        <p id="up-pool" class="text-xl font-bold text-up-bet">0.00 AVAX</p>
-                    </div>
-                    <div class="text-right">
-                        <p class="text-sm font-medium text-gray-600">Total DOWN Bets</p>
-                        <p id="down-pool" class="text-xl font-bold text-down-bet">0.00 AVAX</p>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Betting Interface -->
-            <div id="betting-interface" class="space-y-4">
-                <h2 class="text-xl font-bold text-primary-red border-b border-accent-red pb-2">Place Your Bet</h2>
-                
-                <input type="number" id="bet-amount" placeholder="Enter AVAX amount (e.g., 0.1)" min="0.001" step="0.001"
-                    class="w-full p-3 border-2 border-accent-red rounded-lg focus:ring-primary-red focus:border-primary-red transition duration-150">
-
-                <div class="flex space-x-4">
-                    <button onclick="placeBet(true)" id="bet-up-button" disabled
-                        class="flex-1 p-4 text-white font-bold text-xl rounded-xl shadow-lg transition duration-150 disabled:opacity-50 disabled:cursor-not-allowed bg-up-bet hover:bg-red-700">
-                        UP 🔺
-                    </button>
-                    <button onclick="placeBet(false)" id="bet-down-button" disabled
-                        class="flex-1 p-4 text-white font-bold text-xl rounded-xl shadow-lg transition duration-150 disabled:opacity-50 disabled:cursor-not-allowed bg-down-bet hover:bg-gray-600">
-                        DOWN 🔻
-                    </button>
-                </div>
-            </div>
-
-            <div class="border-t border-accent-red my-6 pt-6">
-                <h2 class="text-xl font-bold text-primary-red mb-4">Your Winnings</h2>
-                <div class="flex justify-between items-center bg-gray-100 p-4 rounded-lg">
-                    <p class="text-xl font-bold text-gray-800"><span id="winnings-balance">0.00</span> AVAX</p>
-                    <button id="claim-button" onclick="claimWinnings()" disabled
-                        class="px-4 py-2 text-sm font-semibold rounded-full bg-primary-red text-white hover:bg-red-700 transition duration-150 shadow-md disabled:opacity-50">
-                        Claim All
-                    </button>
-                </div>
-            </div>
-        </section>
-
-        <!-- Profile Page -->
-        <section id="profile-page" class="page-view bg-white rounded-xl shadow-2xl p-6 md:p-8 border border-accent-red hidden">
-            <h1 class="text-3xl font-extrabold text-center text-primary-red mb-6">
-                Your Profile & Stats
-            </h1>
-            <div class="space-y-4">
-                <p class="text-center text-gray-700">Wallet: <span id="profile-address" class="font-mono text-primary-red">...</span></p>
-                <div class="bg-accent-red/30 p-4 rounded-lg">
-                    <h3 class="text-xl font-bold text-primary-red mb-2">Summary</h3>
-                    <p>Total Winnings: <span class="font-semibold">0.00 AVAX (Placeholder)</span></p>
-                    <p>Win Rate: <span class="font-semibold">0% (Placeholder)</span></p>
-                    <p>Rounds Played: <span class="font-semibold">0 (Placeholder)</span></p>
-                </div>
-                <h3 class="text-xl font-bold text-primary-red border-b border-accent-red pb-2">Recent Bets</h3>
-                <p class="text-sm text-gray-500">
-                    This area will load your historical bets from Supabase after we implement the data synchronization.
-                </p>
-            </div>
-        </section>
-
-        <!-- Leaderboard Page -->
-        <section id="leaderboard-page" class="page-view bg-white rounded-xl shadow-2xl p-6 md:p-8 border border-accent-red hidden">
-            <h1 class="text-3xl font-extrabold text-center text-primary-red mb-6">
-                Top Predictors
-            </h1>
-            <div class="space-y-2">
-                <div class="flex justify-between font-bold text-primary-red border-b-2 border-accent-red pb-1">
-                    <span>Rank</span>
-                    <span>Player</span>
-                    <span>PNL (AVAX)</span>
-                </div>
-                <div class="text-gray-600 space-y-2" id="leaderboard-list">
-                    <p class="py-2 px-3 bg-gray-100 rounded">1. Player X... (Placeholder) - 100 AVAX</p>
-                    <p class="py-2 px-3 bg-gray-100 rounded">2. Player Y... (Placeholder) - 50 AVAX</p>
-                    <p class="py-2 px-3 bg-gray-100 rounded">3. Player Z... (Placeholder) - 25 AVAX</p>
-                    <p class="text-sm text-gray-500 mt-4">Leaderboard data will be retrieved directly from Supabase.</p>
-                </div>
-            </div>
-        </section>
-
-        <!-- Global Message/Error Box -->
-        <div id="message-box" class="mt-6 text-sm p-3 rounded-lg hidden" role="alert"></div>
-
-    </div>
-
-    <!-- Custom Modal Structure -->
-    <div id="wallet-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 hidden flex items-center justify-center z-50">
-        <div class="bg-white rounded-xl shadow-2xl p-6 w-11/12 max-w-sm transform transition-all">
-            <h3 id="modal-title" class="text-xl font-bold text-primary-red mb-4 border-b border-accent-red pb-2">Modal Title</h3>
-            <p id="modal-message" class="text-gray-700 mb-6">Modal Message</p>
-            <button onclick="hideModal()" class="w-full py-2 bg-primary-red text-white rounded-lg font-semibold hover:bg-red-700 transition duration-150">
+    <!-- Modal for Messages and Errors (Non-Alert replacement) -->
+    <div id="message-modal" class="modal-backdrop fixed inset-0 hidden items-center justify-center p-4">
+        <div class="bg-white text-gray-800 p-6 rounded-xl shadow-2xl max-w-sm w-full border-t-4 border-blue-500">
+            <h3 id="modal-title" class="text-xl font-bold mb-3 header-font">Title</h3>
+            <p id="modal-content" class="text-sm"></p>
+            <button onclick="document.getElementById('message-modal').classList.add('hidden')" 
+                    class="mt-6 w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 rounded-lg transition duration-150">
                 Close
             </button>
         </div>
     </div>
+    
+    <!-- Main Header -->
+    <header class="bg-gray-900 shadow-lg sticky top-0 z-40 border-b border-gray-700">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+            <h1 class="header-font text-3xl font-extrabold text-white">
+                <span class="text-white">VC</span><span class="text-blue-400">NEWS</span> <span class="text-sm font-light text-gray-400">Presale</span>
+            </h1>
+            
+            <div id="wallet-status" class="flex items-center space-x-3">
+                <!-- Connect Button -->
+                <button id="connect-wallet-btn" 
+                        class="news-button bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition duration-150 text-sm">
+                    Connect Wallet (Cronos)
+                </button>
+                
+                <!-- Connected State -->
+                <div id="connected-state-div" class="hidden flex items-center bg-gray-700 p-2 rounded-lg">
+                    <span class="text-xs text-green-400 mr-2">● Connected</span>
+                    <span id="wallet-address-span" class="text-sm font-semibold text-gray-200">0x...</span>
+                    <button id="disconnect-btn" class="ml-3 text-red-400 hover:text-red-500 text-xs font-semibold">
+                        [X]
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
 
-    <script type="module">
-        // --- MANDATORY CANVAS GLOBALS (Needed for the environment) ---
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-        let db, auth; // Firebase services
+    <!-- Navigation Tabs -->
+    <nav class="bg-gray-800 border-b border-gray-700">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex space-x-4">
+                <button data-tab="dashboard" class="tab-button py-3 px-4 text-sm font-medium border-b-2 border-transparent text-gray-300 hover:text-white hover:border-blue-400 transition duration-150">
+                    Dashboard
+                </button>
+                <button data-tab="about" class="tab-button py-3 px-4 text-sm font-medium border-b-2 border-transparent text-gray-300 hover:text-white hover:border-blue-400 transition duration-150">
+                    About Presale
+                </button>
+                <button data-tab="progress" class="tab-button py-3 px-4 text-sm font-medium border-b-2 border-transparent text-gray-300 hover:text-white hover:border-blue-400 transition duration-150">
+                    Allocation & Progress
+                </button>
+            </div>
+        </div>
+    </nav>
 
-        // --- CONTRACT & SUPABASE CONFIG ---
-        const CONTRACT_ADDRESS = '0xDab32694450c84E69445561870c35ECE0a15b965';
+    <!-- Main Content Area -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         
-        // Avalanche C-Chain Details (required for network switching)
-        const AVAX_CHAIN_ID = 43114; // Decimal
-        const AVAX_CHAIN_ID_HEX = '0xa86a'; // Hexadecimal
-        const AVAX_RPC = 'https://api.avax.network/ext/bc/C/rpc';
+        <!-- Dashboard Tab Content -->
+        <section id="dashboard" class="tab-content active">
+            <div class="grid lg:grid-cols-3 gap-8">
+                
+                <!-- Left Column: Buy Module -->
+                <div class="lg:col-span-2 bg-gray-800 p-8 rounded-2xl shadow-xl border border-gray-700">
+                    <h2 class="header-font text-4xl font-bold text-blue-400 mb-6">VCNEWS Presale Live</h2>
+                    <p class="text-gray-400 mb-8 text-lg">Purchase your $VCNEWS tokens at a fixed introductory price on the Cronos chain. All funds are secured and immediately allocated per project goals.</p>
 
-        // Your provided Supabase credentials
-        const SUPABASE_URL = 'https://sqlefadldljibxopfwcv.supabase.co';
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNxbGVmYWRsZGxqaWJ4b3Bmd2N2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEzNzI4NzMsImV4cCI6MjA3Njk0ODg3M30.JdkvmsC_bX_dK7uQPhNBxB4_7-0Cn0-KmRR0UjmpdKI';
+                    <div class="bg-gray-900 p-6 rounded-xl border border-gray-700">
+                        <div class="flex justify-between items-center mb-4">
+                            <span class="text-xl font-semibold text-white">Fixed Presale Price</span>
+                            <span class="text-2xl font-bold text-green-400">$0.00001 / $VCNEWS</span>
+                        </div>
+                        <div class="flex justify-between items-center mb-6">
+                            <span class="text-sm text-gray-400">1 CRO buys approx. 9000 $VCNEWS</span>
+                            <span class="text-sm text-gray-400">(CRO market price dependent)</span>
+                        </div>
+                        
+                        <!-- Input Fields -->
+                        <div class="space-y-4">
+                            <div>
+                                <label for="cro-input" class="block text-sm font-medium text-gray-300 mb-1">You pay (CRO)</label>
+                                <input type="number" id="cro-input" placeholder="Min. 100 CRO" 
+                                       class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:ring-blue-500 focus:border-blue-500 text-white transition duration-150" 
+                                       min="10" value="100">
+                            </div>
+                            
+                            <div>
+                                <label for="vcnews-output" class="block text-sm font-medium text-gray-300 mb-1">You receive ($VCNEWS)</label>
+                                <input type="text" id="vcnews-output" value="900,000" readonly 
+                                       class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 text-blue-400 font-bold transition duration-150">
+                            </div>
+                        </div>
 
-        // Contract ABI (Simplified for necessary functions)
-        const CONTRACT_ABI = JSON.parse(`[
-            {"inputs":[{"internalType":"uint256","name":"_roundId","type":"uint256"},{"internalType":"bool","name":"_isUpPrediction","type":"bool"}],"name":"bet","outputs":[],"stateMutability":"payable","type":"function"},
-            {"inputs":[],"name":"claimWinnings","outputs":[],"stateMutability":"nonpayable","type":"function"},
-            {"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"roundId","type":"uint256"},{"indexed":true,"internalType":"address","name":"player","type":"address"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"}],"name":"PayoutCalculated","type":"event"},
-            {"inputs":[],"name":"currentRoundId","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
-            {"inputs":[{"internalType":"uint256","name":"","type":"uint256"}],"name":"bettingRounds","outputs":[{"internalType":"uint256","name":"roundId","type":"uint256"},{"internalType":"uint256","name":"startTime","type":"uint256"},{"internalType":"uint256","name":"closeTime","type":"uint256"},{"internalType":"uint256","name":"lockPrice","type":"uint256"},{"internalType":"uint256","name":"settlementPrice","type":"uint256"},{"internalType":"uint256","name":"totalUpBets","type":"uint256"},{"internalType":"uint256","name":"totalDownBets","type":"uint256"},{"internalType":"bool","name":"isSettled","type":"bool"}],"stateMutability":"view","type":"function"},
-            {"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"winnings","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"}
-        ]`);
+                        <!-- Buy Button -->
+                        <button id="buy-tokens-btn" disabled 
+                                class="news-button mt-6 w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded-xl text-lg disabled:opacity-50 disabled:cursor-not-allowed">
+                            Purchase $VCNEWS
+                        </button>
 
-        // Global State Variables
-        let provider;
-        let signer;
-        let contract;
-        let userAddress = null;
-        let supabase;
-        let currentPage = 'home'; // Tracks the current visible page
+                        <p id="purchase-message" class="text-sm mt-4 text-center text-red-400">
+                            *Please connect your wallet to enable purchases.
+                        </p>
+                    </div>
+                </div>
+                
+                <!-- Right Column: Stats -->
+                <div class="lg:col-span-1 space-y-6">
+                    <!-- Metrics Card -->
+                    <div class="bg-gray-800 p-6 rounded-2xl shadow-xl border border-gray-700">
+                        <h3 class="header-font text-2xl font-bold text-white mb-4 border-b pb-2 border-gray-700">Presale Metrics</h3>
+                        <div class="space-y-3 text-sm">
+                            <div class="flex justify-between">
+                                <span class="text-gray-400">Total Supply:</span>
+                                <span class="font-semibold text-white">1,000,000,000 $VCNEWS</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-gray-400">Presale Allocation:</span>
+                                <span class="font-semibold text-blue-400">500,000,000 $VCNEWS (50%)</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-gray-400">Current Tokens Sold:</span>
+                                <span id="tokens-sold" class="font-bold text-yellow-400">0 $VCNEWS</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-gray-400">Remaining Tokens:</span>
+                                <span id="tokens-remaining" class="font-semibold text-white">500,000,000 $VCNEWS</span>
+                            </div>
+                            <div class="flex justify-between pt-2 border-t border-gray-700">
+                                <span class="text-gray-400">Your Purchased Tokens:</span>
+                                <span id="user-tokens" class="font-bold text-green-400">0 $VCNEWS</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Funding Allocation Card -->
+                    <div class="bg-gray-800 p-6 rounded-2xl shadow-xl border border-gray-700">
+                        <h3 class="header-font text-2xl font-bold text-white mb-4 border-b pb-2 border-gray-700">Fund Allocation</h3>
+                        <ul class="space-y-2 text-sm">
+                            <li class="flex justify-between">
+                                <span class="text-gray-400">70% Liquidity Provision:</span>
+                                <span class="font-semibold text-blue-400">CRONOS DEX</span>
+                            </li>
+                            <li class="flex justify-between">
+                                <span class="text-gray-400">25% Community & Dev:</span>
+                                <span class="font-semibold text-white">Project Growth</span>
+                            </li>
+                            <li class="flex justify-between">
+                                <span class="text-gray-400">5% Team:</span>
+                                <span class="font-semibold text-white">Future Development</span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- About Presale Tab Content -->
+        <section id="about" class="tab-content">
+            <div class="bg-gray-800 p-8 rounded-2xl shadow-xl border border-gray-700">
+                <h2 class="header-font text-4xl font-bold text-blue-400 mb-6">About VCNEWS on Cronos</h2>
+                <p class="text-gray-400 mb-6">The VCNEWS project ($VCNEWS, **@VCNEWS_ON_CRO**) is pioneering a decentralized news platform built on the robust Cronos ecosystem. Our mission is to provide verifiable, fast, and community-driven news, leveraging the speed and low cost of Cronos.</p>
+                
+                <h3 class="header-font text-2xl font-bold text-white mt-8 mb-4">Why Cronos?</h3>
+                <ul class="list-disc list-inside text-gray-400 space-y-2 pl-4">
+                    <li>**EVM Compatibility:** Seamless integration with existing Ethereum tools and wallets.</li>
+                    <li>**Low Fees & High Speed:** Ensures cost-effective and rapid transaction processing for users.</li>
+                    <li>**Growing Ecosystem:** Positioning VCNEWS within a rapidly expanding DeFi environment.</li>
+                </ul>
+
+                <h3 class="header-font text-2xl font-bold text-white mt-8 mb-4">Presale Details</h3>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-700">
+                        <thead class="bg-gray-700">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Metric</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Value</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-700">
+                            <tr>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">Token</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-blue-400">$VCNEWS</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400">ERC20 Standard</td>
+                            </tr>
+                            <tr>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">Presale Supply</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-yellow-400">500,000,000</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400">50% of Total Supply</td>
+                            </tr>
+                            <tr>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">Fixed Price</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-green-400">$0.00001</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400">Fixed rate against CRO in contract</td>
+                            </tr>
+                            <tr>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">Official Site</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-white"><a href="https://cronews-mu.vercel.app/" target="_blank" class="text-blue-500 hover:underline">cronews-mu.vercel.app/</a></td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400">The news platform</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
         
-        let currentRound = {
-            id: 0,
-            closeTime: 0,
-            totalUpBets: 0,
-            totalDownBets: 0,
-            isSettled: true,
+        <!-- Progress Tab Content -->
+        <section id="progress" class="tab-content">
+            <div class="bg-gray-800 p-8 rounded-2xl shadow-xl border border-gray-700">
+                <h2 class="header-font text-4xl font-bold text-blue-400 mb-8">Presale Progress and Fund Usage</h2>
+                
+                <!-- Progress Bar -->
+                <div class="mb-10">
+                    <div class="flex justify-between items-end mb-2">
+                        <span class="text-lg font-semibold text-white">Presale Completion</span>
+                        <span id="progress-percent-text" class="text-3xl font-extrabold text-blue-400">0.00%</span>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div id="progress-fill" class="progress-fill" style="width: 0%;"></div>
+                    </div>
+                    <div class="flex justify-between text-sm mt-2 text-gray-400">
+                        <span>0 $VCNEWS Sold</span>
+                        <span id="progress-cap-text">500,000,000 $VCNEWS Cap</span>
+                    </div>
+                </div>
+
+                <!-- Fund Allocation Chart/Details -->
+                <h3 class="header-font text-2xl font-bold text-white mb-6 border-b pb-2 border-gray-700">Post-Presale Fund Allocation</h3>
+                <div class="grid md:grid-cols-3 gap-6 text-center">
+                    <!-- Liquidity -->
+                    <div class="bg-gray-900 p-6 rounded-xl border-t-4 border-green-500">
+                        <span class="text-5xl font-extrabold text-green-500">70%</span>
+                        <p class="text-lg font-semibold text-white mt-2">Initial Liquidity</p>
+                        <p class="text-sm text-gray-400">Deposited into DEX pool to ensure market stability and immediate trading.</p>
+                    </div>
+                    <!-- Community/Dev -->
+                    <div class="bg-gray-900 p-6 rounded-xl border-t-4 border-blue-500">
+                        <span class="text-5xl font-extrabold text-blue-500">25%</span>
+                        <p class="text-lg font-semibold text-white mt-2">Community & Development</p>
+                        <p class="text-sm text-gray-400">Used for marketing, audits, feature development, and community rewards.</p>
+                    </div>
+                    <!-- Team -->
+                    <div class="bg-gray-900 p-6 rounded-xl border-t-4 border-yellow-500">
+                        <span class="text-5xl font-extrabold text-yellow-500">5%</span>
+                        <p class="text-lg font-semibold text-white mt-2">Core Team</p>
+                        <p class="text-sm text-gray-400">Allocated to the core team, subject to vesting schedules.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-gray-900 border-t border-gray-700 mt-12">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 text-center text-gray-500 text-sm">
+            &copy; 2024 VCNEWS Presale. Built on Cronos. All rights reserved.
+        </div>
+    </footer>
+
+    <!-- JavaScript for Web3, UI, and Logic -->
+    <script>
+        const { ethers } = window;
+
+        // --- Configuration ---
+        const CRONOS_CHAIN_ID_HEX = '0x19'; // Hex for 25
+        const CRONOS_CHAIN_ID_DEC = 25;
+        const CRONOS_RPC = 'https://evm.cronos.org';
+        
+        // **!!! REPLACE WITH DEPLOYED CONTRACT ADDRESSES !!!**
+        const PRESALE_CONTRACT_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3"; 
+        const VCNEWS_TOKEN_ADDRESS = "0xe7f1725E7734CEd6B16fD808a9D1dE8498479ae8"; 
+        // Example Funding Wallet (replace with your personal wallet)
+        const FUNDING_WALLET = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"; 
+
+        // 1 CRO = 9000 VCNEWS tokens (Ratio: 9000e18 tokens per 1e18 CRO)
+        const CRO_TO_TOKEN_RATIO = 9000;
+        const PRESALE_CAP = 500000000; // 500 million tokens
+
+        // --- Contract ABIs (Minimal for interaction) ---
+        const PRESALE_ABI = [
+            // Function to buy tokens
+            "function buyTokens(address beneficiary) payable",
+            // Function to get total tokens sold
+            "function totalTokensSold() view returns (uint256)",
+            // Function to get tokens purchased by address
+            "function purchasedTokens(address) view returns (uint256)",
+            // Fallback (receive)
+            "receive() external payable"
+        ];
+        
+        const TOKEN_ABI = [
+            "function balanceOf(address) view returns (uint256)"
+        ];
+
+
+        // --- State Variables ---
+        let provider, signer, presaleContract, tokenContract;
+        let walletAddress = null;
+        let isWalletConnected = false;
+
+        // --- DOM Elements ---
+        const connectWalletBtn = document.getElementById('connect-wallet-btn');
+        const disconnectBtn = document.getElementById('disconnect-btn');
+        const connectedStateDiv = document.getElementById('connected-state-div');
+        const walletAddressSpan = document.getElementById('wallet-address-span');
+        const croInput = document.getElementById('cro-input');
+        const vcnewsOutput = document.getElementById('vcnews-output');
+        const buyTokensBtn = document.getElementById('buy-tokens-btn');
+        const purchaseMessage = document.getElementById('purchase-message');
+
+        const tokensSoldSpan = document.getElementById('tokens-sold');
+        const tokensRemainingSpan = document.getElementById('tokens-remaining');
+        const userTokensSpan = document.getElementById('user-tokens');
+        const progressFill = document.getElementById('progress-fill');
+        const progressPercentText = document.getElementById('progress-percent-text');
+
+
+        // --- UI & Utility Functions ---
+
+        /** Shows a custom modal with a message. (Replaces alert()) */
+        function showModal(title, content) {
+            document.getElementById('modal-title').innerText = title;
+            document.getElementById('modal-content').innerText = content;
+            document.getElementById('message-modal').classList.remove('hidden');
+            document.getElementById('message-modal').classList.add('flex');
+        }
+
+        /** Updates the wallet connection status in the UI. */
+        const updateUI = (address) => {
+            isWalletConnected = !!address;
+            if (address) {
+                walletAddress = address;
+                walletAddressSpan.innerText = `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
+                connectWalletBtn.classList.add('hidden');
+                connectedStateDiv.classList.remove('hidden');
+                buyTokensBtn.disabled = false;
+                purchaseMessage.classList.add('hidden');
+                refreshData(); // Fetch real-time data on connect
+            } else {
+                walletAddress = null;
+                connectWalletBtn.classList.remove('hidden');
+                connectedStateDiv.classList.add('hidden');
+                buyTokensBtn.disabled = true;
+                purchaseMessage.classList.remove('hidden');
+                userTokensSpan.innerText = "0 $VCNEWS"; // Clear user data
+            }
         };
 
-        // --- UTILITY FUNCTIONS ---
-
-        function showModal(title, message) {
-            document.getElementById('modal-title').textContent = title;
-            document.getElementById('modal-message').textContent = message;
-            document.getElementById('wallet-modal').classList.remove('hidden');
-        }
-
-        function hideModal() {
-            document.getElementById('wallet-modal').classList.add('hidden');
-        }
-
-        function showMessage(message, type = 'info') {
-            const box = document.getElementById('message-box');
-            box.textContent = message;
-            box.classList.remove('hidden', 'bg-red-100', 'text-red-700', 'bg-green-100', 'text-green-700', 'bg-blue-100', 'text-blue-700');
-            box.classList.add('p-3');
-            
-            if (type === 'error') {
-                box.classList.add('bg-red-100', 'text-primary-red', 'border', 'border-primary-red/50');
-            } else if (type === 'success') {
-                box.classList.add('bg-green-100', 'text-green-700');
-            } else {
-                box.classList.add('bg-accent-red/50', 'text-gray-700');
-            }
-        }
-
-        function formatAddress(address) {
-            if (!address) return 'N/A';
-            return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
-        }
-
-        function formatAvax(wei) {
-            if (wei === undefined || wei === null) return '0.00';
-            const etherString = ethers.formatEther(wei);
-            // Truncate to 4 decimal places for cleaner UI, unless it's a very large number
-            const parts = etherString.split('.');
-            if (parts.length === 2) {
-                return parts[0] + '.' + parts[1].substring(0, 4);
-            }
-            return etherString;
-        }
-
-        // --- PAGE ROUTING LOGIC ---
-
-        function renderPage(pageName) {
-            if (pageName !== 'home' && !userAddress) {
-                showModal("Access Denied", "Please connect your wallet to access the DApp features.");
+        /** Calculates the VCNEWS amount based on CRO input */
+        function calculateVCNEWS() {
+            const croAmount = parseFloat(croInput.value);
+            if (isNaN(croAmount) || croAmount <= 0) {
+                vcnewsOutput.value = "0";
                 return;
             }
+            // Simple calculation: CRO amount * fixed ratio
+            const vcnewsAmount = croAmount * CRO_TO_TOKEN_RATIO;
+            vcnewsOutput.value = vcnewsAmount.toLocaleString('en-US', { maximumFractionDigits: 0 });
+        }
 
-            currentPage = pageName;
-            
-            document.querySelectorAll('.page-view').forEach(page => {
-                page.classList.add('hidden');
-            });
+        /** Refreshes all on-chain data and updates progress bar */
+        async function refreshData() {
+            if (!presaleContract) return;
 
-            const targetPage = document.getElementById(`${pageName}-page`);
-            if (targetPage) {
-                targetPage.classList.remove('hidden');
-            }
+            try {
+                // 1. Total Tokens Sold
+                const totalSoldWei = await presaleContract.totalTokensSold();
+                const totalSold = Number(ethers.formatUnits(totalSoldWei, 18));
+                
+                // 2. User Purchased Tokens (if connected)
+                let userPurchased = 0;
+                if (walletAddress) {
+                    const userTokensWei = await presaleContract.purchasedTokens(walletAddress);
+                    userPurchased = Number(ethers.formatUnits(userTokensWei, 18));
+                }
 
-            // Update navigation bar visibility and status
-            if (userAddress) {
-                document.getElementById('nav-header').style.display = 'block';
-            } else {
-                document.getElementById('nav-header').style.display = 'none';
-            }
-            
-            // Special update for Profile page
-            if (pageName === 'profile' && userAddress) {
-                document.getElementById('profile-address').textContent = userAddress;
+                // 3. Update Metrics
+                const tokensRemaining = PRESALE_CAP - totalSold;
+                const progressPercent = (totalSold / PRESALE_CAP) * 100;
+                const cappedPercent = Math.min(progressPercent, 100);
+
+                tokensSoldSpan.innerText = `${totalSold.toLocaleString('en-US', { maximumFractionDigits: 0 })} $VCNEWS`;
+                tokensRemainingSpan.innerText = `${tokensRemaining.toLocaleString('en-US', { maximumFractionDigits: 0 })} $VCNEWS`;
+                userTokensSpan.innerText = `${userPurchased.toLocaleString('en-US', { maximumFractionDigits: 0 })} $VCNEWS`;
+                
+                // 4. Update Progress Bar
+                progressFill.style.width = `${cappedPercent}%`;
+                progressPercentText.innerText = `${cappedPercent.toFixed(2)}%`;
+
+                if (totalSold >= PRESALE_CAP) {
+                     showModal("Presale Complete", "Congratulations! The presale cap has been reached. Trading will commence soon.");
+                     buyTokensBtn.disabled = true;
+                }
+
+            } catch (error) {
+                console.error("Error refreshing data:", error);
             }
         }
 
-        // --- WEB3 / WALLET LOGIC ---
 
-        async function connectWallet() {
+        // --- Web3 Logic ---
+
+        /** Connects to the injected wallet (MetaMask/TrustWallet) and switches to Cronos. */
+        async function injectedConnect() {
             if (!window.ethereum) {
                 showModal("Wallet Not Found", "No injected wallet found. Please install MetaMask or TrustWallet extension.");
                 return;
             }
-
             try {
                 const ethProvider = window.ethereum;
-
-                // 1. Switch or Add Avalanche C-Chain
-                const currentChainId = Number(ethProvider.networkVersion || ethProvider.chainId);
                 
-                if (currentChainId !== AVAX_CHAIN_ID) {
+                // --- 1. Switch to Cronos Chain ---
+                if (Number(ethProvider.chainId) !== CRONOS_CHAIN_ID_DEC) {
                     try {
                         await ethProvider.request({
                             method: 'wallet_switchEthereumChain',
-                            params: [{ chainId: AVAX_CHAIN_ID_HEX }] 
+                            params: [{ chainId: CRONOS_CHAIN_ID_HEX }]
                         });
                     } catch (e) {
                         // This error code means the chain is not in the wallet, so add it
                         if (e.code === 4902) {
-                            await ethProvider.request({
-                                method: 'wallet_addEthereumChain',
-                                params: [{
-                                    chainId: AVAX_CHAIN_ID_HEX,
-                                    chainName: 'Avalanche C-Chain',
-                                    nativeCurrency: { name: 'Avalanche', symbol: 'AVAX', decimals: 18 },
-                                    rpcUrls: [AVAX_RPC],
-                                    blockExplorerUrls: ['https://snowtrace.io']
-                                }]
-                            });
+                            try {
+                                await ethProvider.request({
+                                    method: 'wallet_addEthereumChain',
+                                    params: [{
+                                        chainId: CRONOS_CHAIN_ID_HEX,
+                                        chainName: 'Cronos Mainnet Beta',
+                                        nativeCurrency: { name: 'Cronos', symbol: 'CRO', decimals: 18 },
+                                        rpcUrls: [CRONOS_RPC],
+                                        blockExplorerUrls: ['https://cronoscan.com']
+                                    }]
+                                });
+                            } catch (addError) {
+                                showModal("Chain Setup Failed", "Failed to add the Cronos network. Please do so manually.");
+                                return;
+                            }
                         } else {
-                            showModal("Network Switch Failed", "Failed to switch networks. Please switch to Avalanche C-Chain manually in your wallet.");
+                            showModal("Switch Failed", "Failed to switch to Cronos network: " + (e.message || e));
                             return;
                         }
                     }
                 }
                 
-                // 2. Request account access
-                await ethProvider.request({ method: 'eth_requestAccounts' });
+                // --- 2. Request Account Access ---
+                const accounts = await ethProvider.request({ method: 'eth_requestAccounts' });
 
-                // 3. Ethers.js setup
+                // --- 3. Initialize Ethers.js and Contracts ---
                 provider = new ethers.BrowserProvider(ethProvider);
                 signer = await provider.getSigner();
-                userAddress = await signer.getAddress();
+                walletAddress = accounts[0];
+
+                presaleContract = new ethers.Contract(PRESALE_CONTRACT_ADDRESS, PRESALE_ABI, signer);
+                tokenContract = new ethers.Contract(VCNEWS_TOKEN_ADDRESS, TOKEN_ABI, provider);
+
+                console.log("Connected address:", walletAddress);
+                updateUI(walletAddress);
                 
-                // 4. Contract initialization and UI update
-                contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+                // Set up event listeners for account and chain changes
+                ethProvider.on('accountsChanged', (accounts) => updateUI(accounts.length ? accounts[0] : null));
+                ethProvider.on('chainChanged', () => window.location.reload());
 
-                const formattedAddress = formatAddress(userAddress);
-                document.getElementById('wallet-status').textContent = `Connected: ${formattedAddress}`;
-                document.getElementById('nav-wallet-status').textContent = formattedAddress;
-
-                showMessage('Wallet connected successfully! Welcome to the game.', 'success');
-                
-                renderPage('game');
-
-                // Set up listener for account changes
-                window.ethereum.on('accountsChanged', (accounts) => {
-                    if (accounts.length > 0) {
-                        connectWallet(); 
-                    } else {
-                        // Disconnected
-                        location.reload(); 
-                    }
-                });
-
-                // Set up listener for network changes
-                window.ethereum.on('chainChanged', (chainId) => {
-                    if (Number(chainId) !== AVAX_CHAIN_ID) {
-                        showModal("Wrong Network", "Please switch back to the Avalanche C-Chain (43114) to continue playing.");
-                    }
-                    connectWallet(); // Re-initialize everything
-                });
-
-
-                // Initial data load after connection
-                fetchContractData();
-            } catch (error) {
-                console.error("Connection error:", error);
-                // Use showModal for critical connection errors
-                showModal("Connection Failed", error.message || 'An unknown error occurred during connection.');
+            } catch (err) {
+                console.error(err);
+                showModal("Connection Failed", "Wallet connection failed: " + (err.message || "Unknown error"));
             }
         }
 
-        async function fetchContractData() {
-            if (!provider || !contract) return;
+        /** Executes the token purchase transaction. */
+        async function handleBuyTokens() {
+            if (!isWalletConnected || !presaleContract) {
+                showModal("Error", "Wallet not connected or contracts not initialized.");
+                return;
+            }
+
+            const croAmount = parseFloat(croInput.value);
+            if (isNaN(croAmount) || croAmount <= 0) {
+                showModal("Invalid Amount", "Please enter a valid amount of CRO to purchase.");
+                return;
+            }
             
+            const croWei = ethers.parseEther(croAmount.toString());
+            const expectedTokens = croAmount * CRO_TO_TOKEN_RATIO;
+            
+            buyTokensBtn.innerText = "Waiting for Transaction...";
+            buyTokensBtn.disabled = true;
+
             try {
-                // 1. Get current round ID
-                // Note: using provider here as it's a view function, safer if signer is temporarily lost
-                const currentIdBigInt = await contract.currentRoundId();
-                const currentId = Number(currentIdBigInt);
+                // Call the buyTokens function, passing the CRO value
+                const tx = await presaleContract.buyTokens(walletAddress, {
+                    value: croWei
+                });
 
-                // 2. Get round details
-                const roundData = await contract.bettingRounds(currentId);
+                showModal("Transaction Sent", `Transaction hash: ${tx.hash}. Waiting for confirmation...`);
+
+                const receipt = await tx.wait();
                 
-                currentRound.id = currentId;
-                currentRound.startTime = Number(roundData.startTime) * 1000;
-                currentRound.closeTime = Number(roundData.closeTime) * 1000;
-                currentRound.totalUpBets = roundData.totalUpBets;
-                currentRound.totalDownBets = roundData.totalDownBets;
-                currentRound.isSettled = roundData.isSettled;
-
-                // 3. Get user winnings
-                if (userAddress) {
-                    const userWinnings = await contract.winnings(userAddress);
-                    document.getElementById('winnings-balance').textContent = formatAvax(userWinnings);
-                    document.getElementById('claim-button').disabled = userWinnings === 0n;
+                if (receipt.status === 1) {
+                    showModal("Success!", `${expectedTokens.toLocaleString('en-US', { maximumFractionDigits: 0 })} $VCNEWS has been sent to your wallet!`);
+                    refreshData(); // Update UI after successful purchase
+                } else {
+                    showModal("Transaction Failed", "The transaction was reverted by the network.");
                 }
 
-                updateUI();
             } catch (error) {
-                 console.error("Error fetching contract data:", error);
-                 if (currentRound.id === 0) {
-                    document.getElementById('round-status').textContent = 'Waiting for Round Start (Owner)';
-                    document.getElementById('countdown').textContent = 'N/A';
-                 }
-                 // If the contract is not initialized or on the wrong network, this will fail.
-            }
-        }
-
-        function updateUI() {
-            const now = Date.now();
-            const timeRemaining = Math.max(0, currentRound.closeTime - now);
-            const seconds = Math.floor((timeRemaining / 1000) % 60);
-            const minutes = Math.floor((timeRemaining / 1000) / 60);
-            const countdownText = timeRemaining > 0 ? 
-                `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}` : 
-                'CLOSED';
-            
-            document.getElementById('round-id').textContent = currentRound.id;
-            document.getElementById('countdown').textContent = countdownText;
-            document.getElementById('up-pool').textContent = `${formatAvax(currentRound.totalUpBets)} AVAX`;
-            document.getElementById('down-pool').textContent = `${formatAvax(currentRound.totalDownBets)} AVAX`;
-
-            const isOpen = timeRemaining > 0 && currentRound.id > 0 && !currentRound.isSettled;
-            document.getElementById('round-status').textContent = isOpen ? 'OPEN' : (currentRound.isSettled ? 'SETTLED' : 'CLOSED');
-            
-            const betButtonsDisabled = !signer || !isOpen;
-            document.getElementById('bet-up-button').disabled = betButtonsDisabled;
-            document.getElementById('bet-down-button').disabled = betButtonsDisabled;
-        }
-
-        async function placeBet(isUpPrediction) {
-            if (!signer) {
-                showModal("Wallet Disconnected", "Please connect your wallet first to place a bet.");
-                return;
-            }
-
-            const amountElement = document.getElementById('bet-amount');
-            const amountAvax = amountElement.value;
-
-            if (amountAvax <= 0) {
-                showMessage("Please enter a valid amount.", 'error');
-                return;
-            }
-
-            try {
-                const amountWei = ethers.parseEther(amountAvax);
-                
-                showMessage(`Sending transaction to bet ${amountAvax} AVAX on ${isUpPrediction ? 'UP' : 'DOWN'}...`);
-
-                const tx = await contract.bet(currentRound.id, isUpPrediction, { value: amountWei });
-                
-                showMessage(`Transaction sent: ${tx.hash}. Waiting for confirmation...`, 'info');
-                
-                await tx.wait();
-
-                showMessage('Bet placed successfully!', 'success');
-                amountElement.value = ''; // Clear input
-                fetchContractData(); // Refresh pools
-            } catch (error) {
-                console.error("Bet transaction failed:", error);
-                showMessage(`Bet failed: ${error.reason || error.message.substring(0, 100)}`, 'error');
-            }
-        }
-
-        async function claimWinnings() {
-            if (!signer) {
-                showModal("Wallet Disconnected", "Please connect your wallet first to claim your winnings.");
-                return;
-            }
-
-            try {
-                showMessage('Sending transaction to claim winnings...');
-                
-                document.getElementById('claim-button').disabled = true;
-                
-                const tx = await contract.claimWinnings();
-
-                showMessage(`Claim transaction sent: ${tx.hash}. Waiting for confirmation...`, 'info');
-
-                await tx.wait();
-
-                showMessage('Winnings claimed successfully! Check your wallet balance.', 'success');
-                fetchContractData(); // Refresh winnings balance
-            } catch (error) {
-                console.error("Claim transaction failed:", error);
-                showMessage(`Claim failed: ${error.reason || error.message.substring(0, 100)}`, 'error');
+                console.error("Purchase error:", error);
+                let message = error.message || "Transaction cancelled or failed.";
+                if (error.code === 4001) {
+                    message = "You rejected the transaction in your wallet.";
+                } else if (error.data && error.data.message) {
+                    message = error.data.message; // Detailed contract error
+                }
+                showModal("Transaction Error", message);
             } finally {
-                 document.getElementById('claim-button').disabled = false;
+                buyTokensBtn.innerText = "Purchase $VCNEWS";
+                buyTokensBtn.disabled = false;
             }
         }
 
-        // This function is required by the environment but uses the Supabase client
-        function createClient(url, key) {
-            if (window.supabase) {
-                return window.supabase.createClient(url, key);
-            }
-            // Supabase is loaded via CDN, so it's globally available
-            return Supabase.createClient(url, key);
-        }
+        // --- Event Listeners and Initialization ---
 
-        // --- INITIALIZATION ---
-
-        window.onload = function() {
-            try {
-                // Initialize Supabase client
-                supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-                console.log("Supabase client initialized.");
-
-                // Start the UI update loop
-                setInterval(fetchContractData, 5000); // Poll data every 5 seconds
-                
-                // Set initial view to Home page
-                renderPage('home');
-                fetchContractData();
-
-            } catch (error) {
-                console.error("Initialization Error (Supabase/Firebase):", error);
-                showMessage(`Initialization error: ${error.message}. Check console for details.`, 'error');
-            }
-        };
+        // User's provided wallet connect code, adapted for Cronos
+        connectWalletBtn.addEventListener('click', injectedConnect);
         
-        // --- EXPOSE GLOBAL FUNCTIONS (Required for inline HTML onclick attributes) ---
-        window.connectWallet = connectWallet;
-        window.renderPage = renderPage;
-        window.placeBet = placeBet;
-        window.claimWinnings = claimWinnings;
-        window.hideModal = hideModal;
+        // Disconnect function (not a true disconnect, just clears the UI)
+        disconnectBtn.addEventListener('click', () => {
+            updateUI(null);
+            showModal("Disconnected", "Your wallet connection has been cleared from the session.");
+        });
 
+        // Purchase button
+        buyTokensBtn.addEventListener('click', handleBuyTokens);
+
+        // Input change listener to update output
+        croInput.addEventListener('input', calculateVCNEWS);
+
+        // Tab switching logic
+        document.querySelectorAll('.tab-button').forEach(button => {
+            button.addEventListener('click', (e) => {
+                const targetTab = e.target.dataset.tab;
+                
+                // Deactivate all
+                document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+                document.querySelectorAll('.tab-button').forEach(btn => {
+                    btn.classList.remove('border-blue-400', 'text-white');
+                    btn.classList.add('border-transparent', 'text-gray-300');
+                });
+
+                // Activate target
+                document.getElementById(targetTab).classList.add('active');
+                e.target.classList.add('border-blue-400', 'text-white');
+                e.target.classList.remove('border-transparent', 'text-gray-300');
+            });
+        });
+
+        // Initialize UI and set default active tab
+        document.querySelector('.tab-button[data-tab="dashboard"]').click();
+        
+        // Initial data calculation
+        calculateVCNEWS();
+
+        // Initial data refresh (will only run if contracts are initialized after connection)
+        refreshData(); 
+        
     </script>
 </body>
 </html>
