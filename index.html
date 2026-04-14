@@ -2,1804 +2,1141 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>The Grotto Gambit | Dark Sanctum</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Clockwork Shift: Overdrive v2</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300&display=swap" rel="stylesheet">
     <style>
-        :root {
-            --grotto-purple: #9333ea;
-            --grotto-deep: #4c1d95;
-            --grotto-dark: #1a0a2e;
-            --grotto-darker: #0d0517;
-            --grotto-glow: rgba(147, 51, 234, 0.4);
-            --grotto-light: #c084fc;
-            --heresy-gold: #fbbf24;
-        }
+        @import url('https://fonts.googleapis.com/css2?family=Special+Elite&display=swap');
 
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        :root {
+            --brass: #b5a642;
+            --iron: #3d3d3d;
+            --copper: #b87333;
+            --gold: #ffd700;
+            --bg: #0a0a0a;
+            --steam: rgba(255, 255, 255, 0.6);
         }
 
         body {
-            background: linear-gradient(135deg, var(--grotto-darker) 0%, var(--grotto-dark) 50%, #1e1b4b 100%);
-            color: #e9d5ff;
-            font-family: 'Cormorant Garamond', serif;
-            min-height: 100vh;
-            position: relative;
-            overflow-x: hidden;
+            background-color: var(--bg);
+            color: #d4d4d4;
+            font-family: 'Special+Elite', system-ui, serif;
+            margin: 0;
+            overflow: hidden;
+            touch-action: none;
+            user-select: none;
         }
 
-        body::before {
-            content: '';
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-image: 
-                radial-gradient(circle at 20% 50%, rgba(147, 51, 234, 0.1) 0%, transparent 50%),
-                radial-gradient(circle at 80% 80%, rgba(168, 85, 247, 0.08) 0%, transparent 50%),
-                radial-gradient(circle at 40% 20%, rgba(109, 40, 217, 0.05) 0%, transparent 40%);
-            pointer-events: none;
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: 
+                radial-gradient(circle at 50% 50%, #1e1e1e 0%, #050505 100%);
+        }
+
+        /* Ambient background decorations */
+        .decor-gear {
+            position: absolute;
             z-index: 0;
+            fill: #1a1a1a;
+            pointer-events: none;
+            animation: spin var(--speed) linear infinite var(--dir);
         }
 
-        .cinzel { font-family: 'Cinzel', serif; }
-        
-        .grotto-glass {
-            background: rgba(13, 5, 23, 0.85);
-            border: 1px solid rgba(147, 51, 234, 0.3);
-            box-shadow: 0 8px 32px rgba(147, 51, 234, 0.15);
-            backdrop-filter: blur(12px);
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+        canvas {
             position: relative;
+            z-index: 10;
+            border: 12px solid #2a2a2a;
+            border-image: linear-gradient(135deg, #666, #222, #444) 1;
+            box-shadow: 0 0 100px rgba(0,0,0,1), inset 0 0 20px rgba(0,0,0,0.5);
+            background: #111;
+            max-width: 95vw;
+            max-height: 55vh;
         }
 
-        .grotto-border-glow {
-            border: 1px solid var(--grotto-purple);
-            box-shadow: 0 0 20px var(--grotto-glow), inset 0 0 20px rgba(147, 51, 234, 0.1);
+        /* UI Styling */
+        .ui-panel {
+            position: relative;
+            z-index: 10;
+            background: url('https://www.transparenttextures.com/patterns/brushed-alum.png'), linear-gradient(180deg, #444, #111);
+            border: 3px solid var(--brass);
+            padding: 10px 25px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            display: flex;
+            gap: 40px;
+            align-items: center;
+            box-shadow: 0 15px 30px rgba(0,0,0,0.8);
         }
 
-        .btn-grotto {
-            background: linear-gradient(135deg, var(--grotto-purple) 0%, var(--grotto-deep) 100%);
+        .stat-group { display: flex; flex-direction: column; align-items: center; }
+        .stat-label { color: var(--brass); font-size: 0.65rem; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 2px; }
+        .stat-value { font-size: 1.4rem; color: #fff; font-weight: bold; text-shadow: 0 0 10px rgba(255,255,255,0.2); }
+
+        /* Steam Gauge (Health) */
+        .gauge-container {
+            width: 120px;
+            height: 12px;
+            background: #000;
+            border: 1px solid var(--copper);
+            border-radius: 10px;
+            overflow: hidden;
+            margin-top: 4px;
+        }
+        #health-bar {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, #ff4444, #ffbb00);
+            transition: width 0.3s ease-out;
+        }
+
+        /* Screens & Modals */
+        .screen {
+            position: fixed;
+            inset: 0;
+            z-index: 100;
+            background: radial-gradient(circle, rgba(30,30,30,0.95) 0%, rgba(5,5,5,1) 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .menu-card {
+            background: #1a1a1a;
+            border: 6px double var(--brass);
+            padding: 50px;
+            max-width: 600px;
+            position: relative;
+            box-shadow: 0 0 80px rgba(181, 166, 66, 0.15);
+        }
+
+        .title-text {
+            font-size: 4rem;
+            color: var(--brass);
+            text-transform: uppercase;
+            letter-spacing: -2px;
+            line-height: 0.9;
+            margin-bottom: 20px;
+            filter: drop-shadow(4px 4px 0px #000);
+        }
+
+        .btn {
+            background: linear-gradient(to bottom, var(--brass) 0%, var(--copper) 100%);
+            color: #000;
+            padding: 14px 40px;
+            border: 2px solid #000;
+            font-family: inherit;
+            font-weight: 900;
+            font-size: 1.1rem;
+            cursor: pointer;
+            margin: 12px;
+            text-transform: uppercase;
+            box-shadow: 0 5px 0 #5d4e1a;
+            transition: all 0.1s;
+        }
+
+        .btn:hover { filter: brightness(1.2); }
+        .btn:active { transform: translateY(3px); box-shadow: 0 2px 0 #5d4e1a; }
+        .btn-secondary { background: #333; color: var(--brass); box-shadow: 0 5px 0 #111; }
+
+        /* Virtual Controls */
+        #d-pad { display: none; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 30px; }
+        @media (max-width: 768px) { #d-pad { display: grid; } }
+        .d-btn { width: 65px; height: 65px; background: #222; border: 2px solid var(--copper); border-radius: 12px; color: var(--brass); font-size: 1.5rem; }
+
+        /* Animations */
+        .shake { animation: shake 0.5s ease-in-out; }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-5px); }
+            40%, 80% { transform: translateX(5px); }
+        }
+
+        .steam-cloud {
+            position: absolute;
+            pointer-events: none;
             color: white;
-            font-weight: 600;
+            font-weight: bold;
+            animation: driftUp 1.2s forwards;
+        }
+        @keyframes driftUp {
+            0% { opacity: 1; transform: translateY(0) scale(1); }
+            100% { opacity: 0; transform: translateY(-50px) scale(1.5); }
+        }
+
+        /* Mode buttons */
+        .mode-btn {
+            background: #1a1a1a;
+            border: 2px solid var(--brass);
+            color: var(--brass);
+            padding: 16px 28px;
+            font-family: inherit;
+            font-size: 0.95rem;
+            font-weight: bold;
+            cursor: pointer;
             text-transform: uppercase;
             letter-spacing: 2px;
-            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-            position: relative;
-            overflow: hidden;
-            border: 1px solid rgba(147, 51, 234, 0.5);
+            transition: all 0.15s;
+            text-align: left;
         }
+        .mode-btn:hover, .mode-btn.selected { background: var(--brass); color: #000; }
+        .mode-btn .mode-desc { font-size: 0.65rem; font-weight: normal; opacity: 0.7; display: block; margin-top: 3px; letter-spacing: 0; text-transform: none; }
 
-        .btn-grotto::before {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 0;
-            height: 0;
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.2);
-            transform: translate(-50%, -50%);
-            transition: width 0.6s, height 0.6s;
+        /* Skin selector */
+        .skin-swatch {
+            width: 56px; height: 56px;
+            border: 3px solid #333;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.8rem;
+            transition: all 0.15s;
+            background: #111;
         }
+        .skin-swatch:hover, .skin-swatch.active { border-color: var(--gold); box-shadow: 0 0 12px rgba(255,215,0,0.4); transform: scale(1.1); }
+        .skin-swatch.locked { opacity: 0.35; cursor: not-allowed; }
+        .skin-swatch.locked:hover { transform: none; border-color: #333; }
 
-        .btn-grotto:hover:not(:disabled)::before {
-            width: 300px;
-            height: 300px;
+        /* Map selector */
+        .map-card {
+            border: 2px solid #333;
+            background: #111;
+            padding: 14px 20px;
+            cursor: pointer;
+            transition: all 0.15s;
+            text-align: left;
         }
+        .map-card:hover, .map-card.selected { border-color: var(--copper); background: #1a1a1a; }
+        .map-card .map-title { color: var(--brass); font-size: 1rem; font-weight: bold; text-transform: uppercase; }
+        .map-card .map-detail { color: #888; font-size: 0.7rem; margin-top: 4px; }
 
-        .btn-grotto:hover:not(:disabled) {
-            box-shadow: 0 0 30px var(--grotto-glow), 0 0 60px rgba(147, 51, 234, 0.3);
-            transform: translateY(-2px);
-            border-color: var(--grotto-light);
-        }
+        /* Score screen */
+        .score-row { display: flex; justify-content: space-between; border-bottom: 1px solid #333; padding: 8px 0; font-size: 0.9rem; }
+        .score-row .lbl { color: var(--brass); }
+        .score-row .val { color: #fff; font-weight: bold; }
+        .final-score { font-size: 3.5rem; color: var(--gold); text-shadow: 0 0 20px rgba(255,215,0,0.5); font-weight: 900; }
+        .rank-badge { font-size: 2.5rem; padding: 10px 30px; border: 4px double var(--gold); color: var(--gold); display: inline-block; margin: 10px 0; letter-spacing: 6px; }
 
-        .btn-grotto:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
+        /* In-game HUD extras */
+        #combo-display { color: var(--gold); font-size: 0.8rem; min-width: 60px; text-align: center; }
+        #mode-badge { color: #88aaff; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 2px; }
+        #timer-display { color: #ff8844; font-size: 1.4rem; font-weight: bold; }
+        #trap-warn { color: #ff4444; font-size: 0.65rem; text-transform: uppercase; animation: blink 0.5s alternate infinite; }
+        @keyframes blink { from { opacity: 1; } to { opacity: 0.2; } }
 
-        .move-select {
-            border: 2px solid rgba(147, 51, 234, 0.2);
-            background: rgba(13, 5, 23, 0.6);
-            transition: all 0.4s ease;
-            position: relative;
-        }
+        .btn-sm { padding: 8px 20px; font-size: 0.85rem; margin: 6px; }
 
-        .move-select::after {
-            content: '';
-            position: absolute;
-            inset: 0;
-            background: linear-gradient(135deg, transparent 0%, rgba(147, 51, 234, 0.1) 100%);
-            opacity: 0;
-            transition: opacity 0.4s;
-        }
+        /* Scrollable leaderboard list */
+        .lb-entry { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #222; font-size: 0.85rem; }
+        .lb-entry:first-child { color: var(--gold); }
+        .lb-entry:nth-child(2) { color: #aaa; }
+        .lb-entry:nth-child(3) { color: #b87333; }
 
-        .move-select:hover::after {
-            opacity: 1;
-        }
+        /* Tab system */
+        .tab-btn { background: #111; border: 1px solid #444; color: #888; padding: 8px 18px; cursor: pointer; font-family: inherit; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; transition: all 0.1s; }
+        .tab-btn.active, .tab-btn:hover { background: #2a2a2a; color: var(--brass); border-color: var(--brass); }
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; }
 
-        .move-select.selected {
-            border-color: var(--grotto-purple);
-            background: rgba(147, 51, 234, 0.2);
-            box-shadow: 0 0 30px var(--grotto-glow), inset 0 0 20px rgba(147, 51, 234, 0.2);
-            transform: scale(1.05);
-        }
-
-        .move-select.selected::after {
-            opacity: 1;
-        }
-
-        .mystical-particles {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-            z-index: 1;
-            overflow: hidden;
-        }
-
-        @keyframes float {
-            0%, 100% { transform: translateY(0) translateX(0); opacity: 0.3; }
-            50% { transform: translateY(-20px) translateX(10px); opacity: 0.6; }
-        }
-
-        .particle {
-            position: absolute;
-            width: 3px;
-            height: 3px;
-            background: var(--grotto-purple);
-            border-radius: 50%;
-            box-shadow: 0 0 10px var(--grotto-purple);
-            animation: float linear infinite;
-        }
-
-        ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-track { background: var(--grotto-darker); }
-        ::-webkit-scrollbar-thumb { 
-            background: linear-gradient(180deg, var(--grotto-purple) 0%, var(--grotto-deep) 100%);
-            border-radius: 4px;
-        }
-        ::-webkit-scrollbar-thumb:hover { background: var(--grotto-light); }
-
-        .tab-btn {
-            color: #6b7280;
-            background: transparent;
-            transition: all 0.3s;
-            position: relative;
-        }
-
-        .tab-btn::after {
-            content: '';
-            position: absolute;
-            bottom: 0;
-            left: 50%;
-            width: 0;
-            height: 2px;
-            background: var(--grotto-purple);
-            transition: all 0.3s;
-            transform: translateX(-50%);
-        }
-
-        .tab-btn:hover {
-            color: var(--grotto-light);
-        }
-
-        .tab-btn.active {
-            color: var(--grotto-purple);
-            background: rgba(147, 51, 234, 0.1);
-        }
-
-        .tab-btn.active::after {
-            width: 80%;
-        }
-
-        .lobby-filter {
-            color: #6b7280;
-            background: transparent;
-            transition: all 0.3s;
-        }
-
-        .lobby-filter:hover {
-            color: var(--grotto-light);
-            background: rgba(147, 51, 234, 0.05);
-        }
-
-        .lobby-filter.active {
-            color: var(--grotto-purple);
-            background: rgba(147, 51, 234, 0.2);
-            box-shadow: inset 0 0 10px rgba(147, 51, 234, 0.3);
-        }
-
-        .page-section {
-            display: none;
-            position: relative;
-            z-index: 2;
-        }
-
-        .page-section.active {
-            display: block;
-            animation: fadeIn 0.5s ease;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .header-banner {
-            width: 100%;
-            height: 250px;
-            object-fit: cover;
-            border-bottom: 3px solid var(--grotto-purple);
-            box-shadow: 0 10px 40px rgba(147, 51, 234, 0.3);
-        }
-
-        .game-logo {
-            width: 80px;
-            height: 80px;
-            object-fit: contain;
-            border-radius: 12px;
-            border: 2px solid var(--grotto-purple);
-            box-shadow: 0 0 20px var(--grotto-glow);
-        }
-
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.95);
-            z-index: 1000;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .modal.active {
-            display: flex;
-        }
-
-        .modal-content {
-            max-width: 600px;
-            max-height: 90vh;
-            overflow-y: auto;
-            margin: 20px;
-        }
-
-        .chat-messages {
-            height: 400px;
-            overflow-y: auto;
-            scroll-behavior: smooth;
-        }
-
-        .activity-feed {
-            height: 500px;
-            overflow-y: auto;
-        }
-
-        .notification-badge {
-            position: absolute;
-            top: -8px;
-            right: -8px;
-            background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
-            color: white;
-            border-radius: 50%;
-            width: 20px;
-            height: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 11px;
-            font-weight: bold;
-            animation: pulse 2s infinite;
-            box-shadow: 0 0 10px rgba(220, 38, 38, 0.5);
-        }
-
-        @keyframes pulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.1); }
-        }
-
-        .notification-panel {
-            position: absolute;
-            top: 100%;
-            right: 0;
-            margin-top: 10px;
-            width: 350px;
-            max-height: 500px;
-            overflow-y: auto;
-            display: none;
-            z-index: 1001;
-        }
-
-        .notification-panel.active {
-            display: block;
-            animation: slideDown 0.3s ease;
-        }
-
-        @keyframes slideDown {
-            from { opacity: 0; transform: translateY(-10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .notification-item {
-            border-left: 3px solid var(--grotto-purple);
-            transition: all 0.3s;
-        }
-
-        .notification-item:hover {
-            background: rgba(147, 51, 234, 0.1);
-            transform: translateX(5px);
-        }
-
-        .notification-item.win {
-            border-left-color: #22c55e;
-        }
-
-        .notification-item.loss {
-            border-left-color: #ef4444;
-        }
-
-        @media (max-width: 768px) {
-            .header-banner { height: 150px; }
-            .game-logo { width: 60px; height: 60px; }
-            .chat-messages { height: 300px; }
-            .notification-panel { width: 300px; right: -20px; }
-        }
-
-        input:focus, select:focus, textarea:focus {
-            outline: none;
-            border-color: var(--grotto-purple) !important;
-            box-shadow: 0 0 20px var(--grotto-glow);
-        }
-
-        .stat-card {
-            background: rgba(13, 5, 23, 0.6);
-            border: 1px solid rgba(147, 51, 234, 0.3);
-            transition: all 0.4s;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .stat-card::before {
-            content: '';
-            position: absolute;
-            top: -50%;
-            left: -50%;
-            width: 200%;
-            height: 200%;
-            background: radial-gradient(circle, rgba(147, 51, 234, 0.1) 0%, transparent 70%);
-            opacity: 0;
-            transition: opacity 0.4s;
-        }
-
-        .stat-card:hover::before {
-            opacity: 1;
-        }
-
-        .stat-card:hover {
-            border-color: var(--grotto-purple);
-            box-shadow: 0 0 30px var(--grotto-glow);
-            transform: translateY(-5px);
-        }
+        /* Pulse on level up */
+        @keyframes levelFlash { 0%,100%{box-shadow:0 0 100px rgba(0,0,0,1)} 50%{box-shadow:0 0 60px rgba(181,166,66,0.8), inset 0 0 40px rgba(181,166,66,0.2)} }
+        .level-flash { animation: levelFlash 0.8s ease-in-out; }
     </style>
 </head>
-<body class="min-h-screen p-4">
-    <!-- Mystical Particles -->
-    <div class="mystical-particles" id="particles"></div>
+<body>
 
-    <!-- Header Banner -->
-    <div class="max-w-7xl mx-auto mb-6 relative z-10">
-        <img src="https://raw.githubusercontent.com/precidoboss/my-game-sprites/main/photo_2026-02-11_07-20-57.jpg" 
-             alt="The Grotto Gambit Header" 
-             class="header-banner rounded-lg"
-             onerror="this.style.display='none'">
-    </div>
+<div id="game-container">
+    <!-- Animated Mechanical BG -->
+    <svg class="decor-gear" style="top:-50px; left:-50px; --speed:40s; --dir:normal; width:300px" viewBox="0 0 100 100"><path d="M50 20a30 30 0 100 60 30 30 0 000-60zm0 10a20 20 0 110 40 20 20 0 010-40z"/><rect x="45" y="0" width="10" height="20"/><rect x="45" y="80" width="10" height="20"/><rect x="0" y="45" width="20" height="10"/><rect x="80" y="45" width="20" height="10"/></svg>
+    <svg class="decor-gear" style="bottom:-80px; right:-20px; --speed:60s; --dir:reverse; width:450px" viewBox="0 0 100 100"><path d="M50 20a30 30 0 100 60 30 30 0 000-60zm0 10a20 20 0 110 40 20 20 0 010-40z"/><rect x="45" y="0" width="10" height="20" transform="rotate(45 50 50)"/><rect x="45" y="0" width="10" height="20" transform="rotate(135 50 50)"/><rect x="45" y="0" width="10" height="20" transform="rotate(225 50 50)"/><rect x="45" y="0" width="10" height="20" transform="rotate(315 50 50)"/></svg>
 
-    <nav class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center mb-8 py-6 border-b border-purple-900/30 relative z-10">
-        <div class="flex items-center gap-6">
-            <img src="https://raw.githubusercontent.com/precidoboss/my-game-sprites/main/photo_2026-02-11_07-20-45.jpg" 
-                 alt="Grotto Logo" 
-                 class="game-logo"
-                 onerror="this.style.display='none'">
-            <div>
-                <h1 class="cinzel text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-purple-600 tracking-wider">
-                    THE GROTTO GAMBIT
-                </h1>
-                <p class="text-[11px] text-purple-500/60 uppercase tracking-[0.3em] mt-1">Dark Sanctum // Heresy Protocol</p>
+    <!-- Main UI -->
+    <div id="game-ui" style="display:none">
+        <div class="ui-panel" style="flex-wrap:wrap; gap:20px;">
+            <div class="stat-group">
+                <div class="stat-label">System Integrity</div>
+                <div class="gauge-container"><div id="health-bar"></div></div>
+            </div>
+            <div class="stat-group">
+                <div class="stat-label">Collected</div>
+                <div id="cog-count" class="stat-value">0 / 0</div>
+            </div>
+            <div class="stat-group">
+                <div class="stat-label">Chamber</div>
+                <div id="level-num" class="stat-value">1</div>
+            </div>
+            <div class="stat-group">
+                <div class="stat-label">Score</div>
+                <div id="score-display" class="stat-value">0</div>
+            </div>
+            <div class="stat-group">
+                <div class="stat-label">Combo</div>
+                <div id="combo-display" class="stat-value">x1</div>
+            </div>
+            <div class="stat-group" id="timer-group" style="display:none">
+                <div class="stat-label">Time Left</div>
+                <div id="timer-display" class="stat-value">60</div>
+            </div>
+            <div class="stat-group">
+                <div id="mode-badge">CLASSIC</div>
+                <div id="map-badge" style="color:#888; font-size:0.6rem; letter-spacing:1px;"></div>
             </div>
         </div>
-
-        <div class="flex items-center gap-6 mt-4 md:mt-0 flex-wrap">
-            <!-- Navigation Tabs -->
-            <div class="flex gap-1 bg-black/40 p-1 border border-purple-900/30 rounded-lg flex-wrap">
-                <button onclick="switchTab('lobby')" id="tab-lobby" class="tab-btn active px-5 py-2 text-[11px] uppercase transition rounded cinzel">Sanctum</button>
-                <button onclick="switchTab('leaderboard')" id="tab-leaderboard" class="tab-btn px-5 py-2 text-[11px] uppercase transition rounded cinzel">Pantheon</button>
-                <button onclick="switchTab('profile')" id="tab-profile" class="tab-btn px-5 py-2 text-[11px] uppercase transition rounded cinzel">Chronicle</button>
-                <button onclick="switchTab('howto')" id="tab-howto" class="tab-btn px-5 py-2 text-[11px] uppercase transition rounded cinzel">Doctrine</button>
-            </div>
-
-            <!-- Notification Bell -->
-            <div class="relative">
-                <button id="notification-btn" onclick="toggleNotifications()" class="relative p-3 rounded-full hover:bg-purple-900/20 transition">
-                    <svg class="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
-                    </svg>
-                    <span id="notification-badge" class="notification-badge hidden">0</span>
-                </button>
-                
-                <!-- Notification Panel -->
-                <div id="notification-panel" class="notification-panel grotto-glass rounded-lg shadow-2xl">
-                    <div class="p-4 border-b border-purple-900/30 flex justify-between items-center">
-                        <h3 class="cinzel font-bold text-purple-400">Omens & Portents</h3>
-                        <button onclick="markAllRead()" class="text-xs text-purple-500 hover:text-purple-300 transition uppercase tracking-wider">
-                            Mark Read
-                        </button>
-                    </div>
-                    <div id="notification-list" class="max-h-96 overflow-y-auto">
-                        <div class="p-8 text-center text-purple-700/50 italic">
-                            No omens to reveal...
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div id="connection-interface">
-                <button id="connect-btn" class="btn-grotto px-8 py-3 rounded-lg cinzel relative z-10">Summon Portal</button>
-                <div id="account-info" class="hidden flex items-center gap-4">
-                    <div class="text-right">
-                        <div class="flex items-center gap-2">
-                            <span id="user-address" class="text-[11px] text-purple-400/70 tracking-wider"></span>
-                            <button id="copy-address" class="text-purple-400 hover:text-purple-300 transition text-sm" onclick="copyAddress()" title="Copy Address">
-                                📋
-                            </button>
-                        </div>
-                        <div id="user-balance" class="cinzel text-purple-400 font-bold text-lg">0.00 $HERESY</div>
-                    </div>
-                    <div class="h-12 w-1 bg-gradient-to-b from-purple-600 to-purple-900"></div>
-                </div>
-            </div>
-        </div>
-    </nav>
-
-    <script>
-        // Generate mystical particles
-        function createParticles() {
-            const container = document.getElementById('particles');
-            for (let i = 0; i < 30; i++) {
-                const particle = document.createElement('div');
-                particle.className = 'particle';
-                particle.style.left = Math.random() * 100 + '%';
-                particle.style.top = Math.random() * 100 + '%';
-                particle.style.animationDuration = (Math.random() * 10 + 10) + 's';
-                particle.style.animationDelay = Math.random() * 5 + 's';
-                container.appendChild(particle);
-            }
-        }
-        createParticles();
-    </script>
-<main class="max-w-7xl mx-auto relative z-10">
-        <!-- LOBBY PAGE (SANCTUM) -->
-        <div id="page-lobby" class="page-section active">
-            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                <aside class="lg:col-span-4 space-y-6">
-                    <div class="grotto-glass p-6 rounded-xl">
-                        <h2 class="cinzel text-sm text-purple-400 mb-6 flex items-center gap-3 tracking-widest">
-                            <span class="w-3 h-3 bg-purple-500 rounded-full animate-pulse shadow-lg shadow-purple-500/50"></span>
-                            INVOKE DARK RITUAL
-                        </h2>
-
-                        <div class="grid grid-cols-3 gap-4 mb-6">
-                            <button onclick="selectMove(1)" id="move-1" class="move-select p-5 rounded-lg flex flex-col items-center cursor-pointer group">
-                                <span class="text-4xl mb-2 group-hover:scale-110 transition-transform">☀️</span>
-                                <span class="text-[10px] uppercase tracking-wider text-purple-300">Solar</span>
-                            </button>
-                            <button onclick="selectMove(2)" id="move-2" class="move-select p-5 rounded-lg flex flex-col items-center cursor-pointer group">
-                                <span class="text-4xl mb-2 group-hover:scale-110 transition-transform">🌬️</span>
-                                <span class="text-[10px] uppercase tracking-wider text-purple-300">Oxygen</span>
-                            </button>
-                            <button onclick="selectMove(3)" id="move-3" class="move-select p-5 rounded-lg flex flex-col items-center cursor-pointer group">
-                                <span class="text-4xl mb-2 group-hover:scale-110 transition-transform">🌪️</span>
-                                <span class="text-[10px] uppercase tracking-wider text-purple-300">Dust</span>
-                            </button>
-                        </div>
-
-                        <div class="space-y-5">
-                            <div>
-                                <label class="text-[11px] text-purple-400/70 uppercase mb-3 block tracking-widest cinzel">Heresy Wager</label>
-                                <input id="wager-amount" type="number" step="0.1" value="1.0" 
-                                    class="w-full bg-black/50 border border-purple-900/50 p-4 text-purple-300 rounded-lg cinzel text-lg transition">
-                            </div>
-                            <div>
-                                <label class="text-[11px] text-purple-400/70 uppercase mb-3 block tracking-widest cinzel">Dark Timeout</label>
-                                <select id="timeout-select" 
-                                    class="w-full bg-black/50 border border-purple-900/50 p-4 text-purple-300 rounded-lg cinzel transition">
-                                    <option value="300">5 Minutes</option>
-                                    <option value="600">10 Minutes</option>
-                                    <option value="900" selected>15 Minutes</option>
-                                </select>
-                            </div>
-                            <button id="create-btn" onclick="handleCreateGame()" class="btn-grotto w-full py-4 text-base rounded-lg cinzel relative z-10">
-                                Invoke Ritual
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Global Chat -->
-                    <div class="grotto-glass p-6 rounded-xl">
-                        <h2 class="cinzel text-sm text-purple-400 mb-4 flex items-center gap-3 tracking-widest">
-                            <span class="w-3 h-3 bg-purple-500 rounded-full animate-pulse shadow-lg shadow-purple-500/50"></span>
-                            MYSTIC WHISPERS
-                        </h2>
-                        <div id="chat-messages" class="chat-messages mb-4 bg-black/40 border border-purple-900/30 rounded-lg p-4 space-y-3"></div>
-                        <div class="flex gap-2">
-                            <input id="chat-input" type="text" placeholder="Whisper into the void..." maxlength="200" 
-                                class="flex-1 bg-black/50 border border-purple-900/50 p-3 text-sm text-purple-300 rounded-lg transition" 
-                                onkeypress="if(event.key==='Enter') sendMessage()">
-                            <button onclick="sendMessage()" class="btn-grotto px-5 py-2 text-xs rounded-lg cinzel">Send</button>
-                        </div>
-                    </div>
-                </aside>
-
-                <section class="lg:col-span-8 space-y-6">
-                    <!-- Game Lobby -->
-                    <div class="grotto-glass p-6 rounded-xl min-h-[500px]">
-                        <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 border-b border-purple-900/20 pb-4 gap-4">
-                            <h2 class="cinzel text-xl text-purple-300 tracking-widest flex items-center gap-3">
-                                DARK FREQUENCIES
-                                <span class="text-[10px] bg-purple-900/30 px-3 py-1 text-purple-500 rounded-full">LIVE</span>
-                            </h2>
-                            
-                            <div class="flex items-center gap-3 flex-wrap">
-                                <div class="flex gap-1 bg-black/40 p-1 border border-purple-900/30 rounded-lg">
-                                    <button onclick="setLobbyFilter('all')" id="filter-all" class="lobby-filter active px-4 py-2 text-[10px] uppercase transition rounded">All</button>
-                                    <button onclick="setLobbyFilter('open')" id="filter-open" class="lobby-filter px-4 py-2 text-[10px] uppercase transition rounded">Open</button>
-                                    <button onclick="setLobbyFilter('intercepted')" id="filter-intercepted" class="lobby-filter px-4 py-2 text-[10px] uppercase transition rounded">Active</button>
-                                    <button onclick="setLobbyFilter('resolved')" id="filter-resolved" class="lobby-filter px-4 py-2 text-[10px] uppercase transition rounded">Sealed</button>
-                                </div>
-                                
-                                <button onclick="refreshLobby()" class="text-[11px] text-purple-400 hover:text-purple-300 border border-purple-500/30 px-4 py-2 uppercase transition rounded-lg hover:bg-purple-900/20">
-                                    Refresh
-                                </button>
-                            </div>
-                        </div>
-                        <div id="lobby-list" class="space-y-4"></div>
-                    </div>
-
-                    <!-- Live Activity Feed -->
-                    <div class="grotto-glass p-6 rounded-xl">
-                        <h2 class="cinzel text-xl text-purple-300 tracking-widest mb-6 flex items-center gap-3">
-                            CHRONICLE OF BATTLES
-                            <span class="w-3 h-3 bg-green-500 rounded-full animate-pulse shadow-lg shadow-green-500/50"></span>
-                        </h2>
-                        <div id="activity-feed" class="activity-feed space-y-3"></div>
-                    </div>
-                </section>
-            </div>
-        </div>
-
-        <!-- LEADERBOARD PAGE (PANTHEON) -->
-        <div id="page-leaderboard" class="page-section">
-            <div class="grotto-glass p-8 rounded-xl">
-                <h2 class="cinzel text-3xl text-purple-400 mb-8 flex items-center gap-4 tracking-wider">
-                    <span class="w-4 h-4 bg-purple-500 rounded-full animate-pulse shadow-lg shadow-purple-500/50"></span>
-                    HALL OF LEGENDS
-                </h2>
-
-                <!-- Global Stats -->
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
-                    <div class="stat-card p-6 text-center rounded-xl">
-                        <div class="text-[11px] text-purple-400/70 uppercase mb-2 tracking-widest cinzel">Total Heresy</div>
-                        <div id="global-wagered" class="cinzel text-3xl text-purple-400 font-bold">--</div>
-                    </div>
-                    <div class="stat-card p-6 text-center rounded-xl border-red-900/30">
-                        <div class="text-[11px] text-red-400/70 uppercase mb-2 tracking-widest cinzel">Sacrificed</div>
-                        <div id="global-burnt" class="cinzel text-3xl text-red-400 font-bold">--</div>
-                    </div>
-                    <div class="stat-card p-6 text-center rounded-xl border-blue-900/30">
-                        <div class="text-[11px] text-blue-400/70 uppercase mb-2 tracking-widest cinzel">Vault</div>
-                        <div id="global-treasury" class="cinzel text-3xl text-blue-400 font-bold">--</div>
-                    </div>
-                    <div class="stat-card p-6 text-center rounded-xl border-green-900/30">
-                        <div class="text-[11px] text-green-400/70 uppercase mb-2 tracking-widest cinzel">Rituals</div>
-                        <div id="global-games" class="cinzel text-3xl text-green-400 font-bold">--</div>
-                    </div>
-                </div>
-
-                <!-- Hall of Fame & Shame -->
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                    <!-- Biggest Loser -->
-                    <div class="grotto-glass p-6 rounded-xl border-2 border-red-500/30">
-                        <h3 class="cinzel text-lg text-red-400 mb-4 flex items-center gap-2">
-                            💀 Fallen Champion
-                        </h3>
-                        <div id="biggest-loser" class="text-center">
-                            <div class="text-sm text-red-300/70 mb-2">Most Lost</div>
-                            <div class="cinzel text-2xl text-red-400 font-bold mb-1">--</div>
-                            <div class="text-xs text-red-500/50">-- $HERESY Lost</div>
-                        </div>
-                    </div>
-
-                    <!-- Win Streak King -->
-                    <div class="grotto-glass p-6 rounded-xl border-2 border-yellow-500/30">
-                        <h3 class="cinzel text-lg text-yellow-400 mb-4 flex items-center gap-2">
-                            🔥 Streak Master
-                        </h3>
-                        <div id="streak-master" class="text-center">
-                            <div class="text-sm text-yellow-300/70 mb-2">Longest Streak</div>
-                            <div class="cinzel text-2xl text-yellow-400 font-bold mb-1">--</div>
-                            <div class="text-xs text-yellow-500/50">-- Consecutive Wins</div>
-                        </div>
-                    </div>
-
-                    <!-- Most Active -->
-                    <div class="grotto-glass p-6 rounded-xl border-2 border-blue-500/30">
-                        <h3 class="cinzel text-lg text-blue-400 mb-4 flex items-center gap-2">
-                            ⚡ Dark Devotee
-                        </h3>
-                        <div id="most-active" class="text-center">
-                            <div class="text-sm text-blue-300/70 mb-2">Most Rituals</div>
-                            <div class="cinzel text-2xl text-blue-400 font-bold mb-1">--</div>
-                            <div class="text-xs text-blue-500/50">-- Total Games</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Leaderboard Table -->
-                <div class="overflow-x-auto">
-                    <table class="w-full">
-                        <thead>
-                            <tr class="border-b border-purple-900/30">
-                                <th class="text-left p-4 text-[11px] text-purple-400/70 uppercase tracking-widest cinzel">Rank</th>
-                                <th class="text-left p-4 text-[11px] text-purple-400/70 uppercase tracking-widest cinzel">Soul</th>
-                                <th class="text-right p-4 text-[11px] text-purple-400/70 uppercase tracking-widest cinzel">Heresy</th>
-                                <th class="text-right p-4 text-[11px] text-purple-400/70 uppercase tracking-widest cinzel">Victory %</th>
-                                <th class="text-right p-4 text-[11px] text-purple-400/70 uppercase tracking-widest cinzel">Greatest Pot</th>
-                                <th class="text-right p-4 text-[11px] text-purple-400/70 uppercase tracking-widest cinzel">Streak</th>
-                            </tr>
-                        </thead>
-                        <tbody id="leaderboard-body"></tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <!-- PROFILE PAGE (CHRONICLE) -->
-        <div id="page-profile" class="page-section">
-            <div class="grotto-glass p-8 rounded-xl max-w-5xl mx-auto">
-                <h2 class="cinzel text-3xl text-purple-400 mb-8 flex items-center gap-4 tracking-wider">
-                    <span class="w-4 h-4 bg-purple-500 rounded-full animate-pulse shadow-lg shadow-purple-500/50"></span>
-                    SOUL CHRONICLE
-                </h2>
-                <div id="profile-content" class="space-y-6"></div>
-            </div>
-        </div>
-<!-- HOW TO PLAY PAGE (DOCTRINE) -->
-        <div id="page-howto" class="page-section">
-            <div class="grotto-glass p-8 rounded-xl max-w-4xl mx-auto">
-                <h2 class="cinzel text-3xl text-purple-400 mb-8 tracking-wider">ANCIENT DOCTRINE</h2>
-                
-                <div class="space-y-8 text-purple-200/90 leading-relaxed">
-                    <section>
-                        <h3 class="cinzel text-xl text-purple-400 mb-4 flex items-center gap-2">
-                            🎯 THE FORBIDDEN RITUAL
-                        </h3>
-                        <p class="text-base">The Grotto Gambit is a dark pact sealed in $HERESY tokens. Two souls enter the void with strategic intent—three mystical forces clash in eternal balance. The victor claims the offering, while the defeated soul learns humility.</p>
-                    </section>
-
-                    <section>
-                        <h3 class="cinzel text-xl text-purple-400 mb-4 flex items-center gap-2">
-                            ⚔️ THREE FORCES OF CHAOS
-                        </h3>
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            <div class="grotto-glass p-6 rounded-lg border border-purple-900/30 hover:border-purple-500/50 transition">
-                                <div class="text-5xl mb-3 text-center">☀️</div>
-                                <div class="cinzel text-purple-400 mb-2 text-center text-lg">SOLAR FLARE</div>
-                                <div class="text-[12px] text-purple-300/60 text-center">Burns through Oxygen</div>
-                            </div>
-                            <div class="grotto-glass p-6 rounded-lg border border-purple-900/30 hover:border-purple-500/50 transition">
-                                <div class="text-5xl mb-3 text-center">🌬️</div>
-                                <div class="cinzel text-purple-400 mb-2 text-center text-lg">OXYGEN SIPHON</div>
-                                <div class="text-[12px] text-purple-300/60 text-center">Disperses the Dust</div>
-                            </div>
-                            <div class="grotto-glass p-6 rounded-lg border border-purple-900/30 hover:border-purple-500/50 transition">
-                                <div class="text-5xl mb-3 text-center">🌪️</div>
-                                <div class="cinzel text-purple-400 mb-2 text-center text-lg">DUST STORM</div>
-                                <div class="text-[12px] text-purple-300/60 text-center">Obscures the Solar</div>
-                            </div>
-                        </div>
-                    </section>
-
-                    <section>
-                        <h3 class="cinzel text-xl text-purple-400 mb-4 flex items-center gap-2">
-                            📜 RITUAL SEQUENCE
-                        </h3>
-                        <div class="space-y-5">
-                            <div class="flex gap-5 group">
-                                <div class="cinzel text-2xl text-purple-500 w-12 flex-shrink-0 group-hover:scale-110 transition">1.</div>
-                                <div>
-                                    <div class="font-semibold text-purple-300 mb-2 text-lg">Invoke the Ritual (Host)</div>
-                                    <p class="text-[15px] text-purple-200/70">Select your force, set your $HERESY wager, and choose the timeout. Your choice is encrypted in dark magic and stored locally. Click "Invoke Ritual" to seal your intent.</p>
-                                </div>
-                            </div>
-                            <div class="flex gap-5 group">
-                                <div class="cinzel text-2xl text-purple-500 w-12 flex-shrink-0 group-hover:scale-110 transition">2.</div>
-                                <div>
-                                    <div class="font-semibold text-purple-300 mb-2 text-lg">Challenge the Void (Opponent)</div>
-                                    <p class="text-[15px] text-purple-200/70">Discover an open ritual in the sanctum. Choose your force and match the $HERESY offering to accept the challenge.</p>
-                                </div>
-                            </div>
-                            <div class="flex gap-5 group">
-                                <div class="cinzel text-2xl text-purple-500 w-12 flex-shrink-0 group-hover:scale-110 transition">3.</div>
-                                <div>
-                                    <div class="font-semibold text-purple-300 mb-2 text-lg">Reveal the Truth (Host)</div>
-                                    <p class="text-[15px] text-purple-200/70">Once challenged, unveil your hidden force. The ancient contract determines the victor based on eternal laws.</p>
-                                </div>
-                            </div>
-                            <div class="flex gap-5 group">
-                                <div class="cinzel text-2xl text-purple-500 w-12 flex-shrink-0 group-hover:scale-110 transition">4.</div>
-                                <div>
-                                    <div class="font-semibold text-purple-300 mb-2 text-lg">Judgment & Reward</div>
-                                    <p class="text-[15px] text-purple-200/70">The winner claims 97% of the combined $HERESY. 1.5% is sacrificed to the void, 1.5% fills the vault. In draws, both receive their stake minus tribute (3%).</p>
-                                </div>
-                            </div>
-                        </div>
-                    </section>
-
-                    <section>
-                        <h3 class="cinzel text-xl text-purple-400 mb-4 flex items-center gap-2">
-                            ⚠️ DARK WARNINGS
-                        </h3>
-                        <ul class="space-y-3 text-[15px] text-purple-200/70">
-                            <li class="flex gap-3">
-                                <span class="text-purple-500 flex-shrink-0">→</span>
-                                <span>You must return to the same sanctum (browser/device) to reveal your force—the secret dwells within</span>
-                            </li>
-                            <li class="flex gap-3">
-                                <span class="text-purple-500 flex-shrink-0">→</span>
-                                <span>Should the host fail to reveal before the timeout, the challenger may claim victory by forfeit</span>
-                            </li>
-                            <li class="flex gap-3">
-                                <span class="text-purple-500 flex-shrink-0">→</span>
-                                <span>If no soul challenges within the timeout, the host may reclaim their $HERESY</span>
-                            </li>
-                            <li class="flex gap-3">
-                                <span class="text-purple-500 flex-shrink-0">→</span>
-                                <span>All pacts are sealed on The Grotto chain—immutable and verifiable through cryptographic proof</span>
-                            </li>
-                        </ul>
-                    </section>
-
-                    <section class="grotto-glass border-2 border-purple-500/30 p-8 rounded-xl">
-                        <h3 class="cinzel text-xl text-purple-400 mb-4 flex items-center gap-2">
-                            💰 TRIBUTE & REWARDS
-                        </h3>
-                        <div class="space-y-3 text-[15px]">
-                            <div class="flex justify-between py-2 border-b border-purple-900/20">
-                                <span class="text-purple-200/70">Victor's Claim:</span>
-                                <span class="text-purple-400 font-semibold cinzel">97% of pot</span>
-                            </div>
-                            <div class="flex justify-between py-2 border-b border-purple-900/20">
-                                <span class="text-purple-200/70">Vault Tribute:</span>
-                                <span class="text-purple-400 font-semibold cinzel">1.5%</span>
-                            </div>
-                            <div class="flex justify-between py-2 border-b border-purple-900/20">
-                                <span class="text-purple-200/70">Dark Sacrifice:</span>
-                                <span class="text-purple-400 font-semibold cinzel">1.5%</span>
-                            </div>
-                            <div class="flex justify-between py-2">
-                                <span class="text-purple-200/70">Draw (each soul):</span>
-                                <span class="text-purple-400 font-semibold cinzel">Stake - 3%</span>
-                            </div>
-                        </div>
-                    </section>
-                </div>
-            </div>
-        </div>
-    </main>
-
-    <!-- Player Profile Modal -->
-    <div id="player-modal" class="modal">
-        <div class="modal-content grotto-glass p-8 w-full rounded-xl">
-            <div class="flex justify-between items-center mb-6">
-                <h2 class="cinzel text-2xl text-purple-400 tracking-wider">SOUL ARCHIVE</h2>
-                <button onclick="closePlayerModal()" class="text-3xl text-purple-500 hover:text-purple-300 transition">&times;</button>
-            </div>
-            <div id="player-modal-content"></div>
+        <canvas id="gameCanvas"></canvas>
+        <div id="d-pad">
+            <div></div><button class="d-btn" id="btn-up">▲</button><div></div>
+            <button class="d-btn" id="btn-left">◀</button><button class="d-btn" id="btn-down">▼</button><button class="d-btn" id="btn-right">▶</button>
         </div>
     </div>
 
-    <div id="toast" class="fixed bottom-8 left-1/2 -translate-x-1/2 grotto-glass border-2 border-purple-500 px-8 py-4 text-purple-300 cinzel text-sm transform translate-y-32 transition-all duration-300 z-[200] rounded-lg shadow-2xl">
-        SYSTEM MESSAGE
+    <!-- Home Screen -->
+    <div id="home-screen" class="screen">
+        <div class="menu-card" style="max-width:700px; padding:40px; width:100%; max-height:90vh; overflow-y:auto;">
+            <h1 class="title-text" style="font-size:2.8rem;">CLOCKWORK<br>SHIFT <span class="text-xl block" style="color:var(--copper)">OVERDRIVE v3.0</span></h1>
+            <p style="color:rgba(181,166,66,0.6); margin-bottom:20px; font-style:italic; letter-spacing:3px; font-size:0.8rem;">A STEAMPUNK SURVIVAL CHALLENGE</p>
+
+            <!-- Tabs -->
+            <div style="display:flex; gap:0; margin-bottom:20px; border-bottom:1px solid #333;">
+                <button class="tab-btn active" onclick="switchTab('tab-play')">▶ Play</button>
+                <button class="tab-btn" onclick="switchTab('tab-mode')">⚙ Mode</button>
+                <button class="tab-btn" onclick="switchTab('tab-map')">🗺 Map</button>
+                <button class="tab-btn" onclick="switchTab('tab-skin')">🎨 Skin</button>
+                <button class="tab-btn" onclick="switchTab('tab-scores')">🏆 Scores</button>
+                <button class="tab-btn" onclick="switchTab('tab-manual')">📖 Manual</button>
+            </div>
+
+            <!-- Tab: Play -->
+            <div id="tab-play" class="tab-panel active">
+                <div style="text-align:center; padding:20px 0;">
+                    <div id="home-mode-summary" style="color:#888; font-size:0.8rem; margin-bottom:20px;"></div>
+                    <button class="btn" style="font-size:1.3rem; padding:18px 60px;" onclick="startGame()">🔩 Start Engine</button>
+                </div>
+            </div>
+
+            <!-- Tab: Mode -->
+            <div id="tab-mode" class="tab-panel">
+                <div style="display:flex; flex-direction:column; gap:10px;">
+                    <button class="mode-btn selected" id="mode-classic" onclick="selectMode('classic', this)">
+                        ⚙ Classic
+                        <span class="mode-desc">Collect all cogs, reach the exit. 5 lives.</span>
+                    </button>
+                    <button class="mode-btn" id="mode-blitz" onclick="selectMode('blitz', this)">
+                        ⚡ Blitz
+                        <span class="mode-desc">60-second countdown per level. Speed is survival.</span>
+                    </button>
+                    <button class="mode-btn" id="mode-ironclad" onclick="selectMode('ironclad', this)">
+                        💀 Iron Clad
+                        <span class="mode-desc">One hit = death. No mercy. For veterans only.</span>
+                    </button>
+                    <button class="mode-btn" id="mode-endless" onclick="selectMode('endless', this)">
+                        ♾ Endless
+                        <span class="mode-desc">Procedurally cycling levels. How far can you go?</span>
+                    </button>
+                    <button class="mode-btn" id="mode-phantom" onclick="selectMode('phantom', this)">
+                        👁 Phantom
+                        <span class="mode-desc">Limited visibility — only a foggy radius around you.</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Tab: Map -->
+            <div id="tab-map" class="tab-panel">
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;" id="map-grid"></div>
+            </div>
+
+            <!-- Tab: Skin -->
+            <div id="tab-skin" class="tab-panel">
+                <p style="color:#888; font-size:0.75rem; margin-bottom:14px;">Unlock skins by reaching level milestones.</p>
+                <div style="display:flex; flex-wrap:wrap; gap:12px;" id="skin-grid"></div>
+            </div>
+
+            <!-- Tab: Scores -->
+            <div id="tab-scores" class="tab-panel">
+                <div id="leaderboard-list" style="max-height:280px; overflow-y:auto;"></div>
+                <button class="btn btn-secondary btn-sm" style="margin-top:14px;" onclick="clearScores()">Clear History</button>
+            </div>
+
+            <!-- Tab: Manual -->
+            <div id="tab-manual" class="tab-panel">
+                <ul style="text-align:left; font-size:0.82rem; line-height:2; color:#ccc;">
+                    <li><b style="color:var(--gold)">MOVE:</b> Arrow keys / WASD or D-Pad</li>
+                    <li><b style="color:var(--gold)">OBJECTIVE:</b> Collect all 🟡 Brass Cogs → open Exit 🟢</li>
+                    <li><b style="color:var(--gold)">STEAM VENT (4):</b> Periodic blast — drains integrity</li>
+                    <li><b style="color:var(--gold)">PRESSURE PLATE (5):</b> Step on it to unlock Iron Gates (6)</li>
+                    <li><b style="color:var(--gold)">SPIKE TRAP (8):</b> Hidden spikes — instant -25 damage</li>
+                    <li><b style="color:var(--gold)">CONVEYOR (9):</b> Pushes you in its direction</li>
+                    <li><b style="color:var(--gold)">CRUSHER (A):</b> Oscillating wall — get crushed = -40 damage</li>
+                    <li><b style="color:var(--gold)">TELEPORTER (B):</b> Warps to linked teleporter</li>
+                    <li><b style="color:var(--gold)">ICE FLOOR (C):</b> Slide 2 tiles when stepping on it</li>
+                    <li><b style="color:var(--gold)">COMBO:</b> Collect cogs rapidly to multiply score</li>
+                    <li><b style="color:var(--gold)">BONUS COGS (D):</b> Golden — worth 3× score points</li>
+                </ul>
+            </div>
+        </div>
     </div>
+
+    <!-- Message Modal (death/retry) -->
+    <div id="msg-modal" class="modal screen" style="display:none">
+        <div class="menu-card" style="min-width:340px;">
+            <h2 id="modal-title" class="title-text text-3xl">FAILURE</h2>
+            <p id="modal-text" class="mb-8 text-white/80 italic" style="color:rgba(255,255,255,0.7); margin-bottom:24px;">The furnace has gone cold.</p>
+            <div style="display:flex; flex-wrap:wrap; justify-content:center;">
+                <button id="modal-btn" class="btn" onclick="resetLevel()">Repair & Retry</button>
+                <button class="btn btn-secondary" onclick="goHome()">Main Menu</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Final Score Screen -->
+    <div id="score-screen" class="screen" style="display:none">
+        <div class="menu-card" style="max-width:500px; width:100%;">
+            <div style="color:var(--brass); font-size:0.7rem; letter-spacing:4px; text-transform:uppercase; margin-bottom:6px;">RUN COMPLETE</div>
+            <div class="final-score" id="fs-total">0</div>
+            <div class="rank-badge" id="fs-rank">C</div>
+            <div style="width:100%; margin:16px 0;">
+                <div class="score-row"><span class="lbl">Levels Completed</span><span class="val" id="fs-levels">0</span></div>
+                <div class="score-row"><span class="lbl">Cogs Collected</span><span class="val" id="fs-cogs">0</span></div>
+                <div class="score-row"><span class="lbl">Best Combo</span><span class="val" id="fs-combo">x1</span></div>
+                <div class="score-row"><span class="lbl">Damage Taken</span><span class="val" id="fs-damage">0</span></div>
+                <div class="score-row"><span class="lbl">Time Survived</span><span class="val" id="fs-time">0s</span></div>
+                <div class="score-row"><span class="lbl">Mode</span><span class="val" id="fs-mode">Classic</span></div>
+                <div class="score-row"><span class="lbl">Map Pack</span><span class="val" id="fs-map">Standard</span></div>
+            </div>
+            <div style="display:flex; flex-wrap:wrap; justify-content:center;">
+                <button class="btn" onclick="startGame()">Play Again</button>
+                <button class="btn btn-secondary" onclick="goHome()">Main Menu</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
-        // The Grotto Chain Configuration
-        const CHAIN_ID = "0x8E6F"; // 36463
-        const RPC_URL = "https://subnets.avax.network/thegrotto/mainnet/rpc";
-        const CONTRACT_ADDR = "0x62cF10284C9b4a5B3b68B2cCBB1EBaec3f86320c";
-        const EXPLORER_URL = "https://subnets.avax.network/thegrotto";
-        const CHAIN_NAME = "The Grotto";
-        const CURRENCY_SYMBOL = "HERESY";
-        
-        // Supabase Configuration - GROTTO TABLE
-        const SB_URL = "https://tvckbtgggsuwxtlgilcl.supabase.co"; 
-        const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR2Y2tidGdnZ3N1d3h0bGdpbGNsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDY2NDY0NSwiZXhwIjoyMDg2MjQwNjQ1fQ.DhvGNo3seKoRtDmeRod0gAP48yFZw_0-kAvY3eT_554"; 
-        const _supabase = supabase.createClient(SB_URL, SB_KEY);
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const TILE_SIZE = 54;
+    const COLS = 11;
+    const ROWS = 8;
+    canvas.width = COLS * TILE_SIZE;
+    canvas.height = ROWS * TILE_SIZE;
 
-        const ABI = [
-            "function createGame(bytes32 _hash, uint256 _timeout) external payable",
-            "function challengeGame(uint256 _gameId, uint8 _move) external payable",
-            "function resolveGame(uint256 _gameId, uint8 _move, string calldata _salt) external",
-            "function forceForfeit(uint256 _gameId) external",
-            "function refundUnchallenged(uint256 _gameId) external",
-            "function gameCounter() public view returns (uint256)",
-            "function games(uint256) public view returns (address host, address challenger, bytes32 commitHash, uint8 hostMove, uint8 challengerMove, uint256 wager, uint256 timeout, uint256 timestamp, uint8 status)",
-            "event GameCreated(uint256 indexed gameId, address indexed host, uint256 wager, uint256 timeout, bytes32 commitHash)",
-            "event GameChallenged(uint256 indexed gameId, address indexed challenger)",
-            "event GameResolved(uint256 indexed gameId, address winner, uint256 payout)"
-        ];
+    // ══════════════════════════════════════════════
+    // SKINS
+    // ══════════════════════════════════════════════
+    const SKINS = [
+        { id: 'copper',   name: 'Copper Core',    color: '#b87333', glowColor: 'rgba(184,115,51,0.3)',  unlockLevel: 1,  icon: '🟠' },
+        { id: 'brass',    name: 'Brass Baron',     color: '#b5a642', glowColor: 'rgba(181,166,66,0.3)',  unlockLevel: 1,  icon: '🟡' },
+        { id: 'silver',   name: 'Silver Specter',  color: '#c0c0c0', glowColor: 'rgba(192,192,192,0.3)', unlockLevel: 4,  icon: '⚪' },
+        { id: 'obsidian', name: 'Obsidian Engine', color: '#3a3a5c', glowColor: 'rgba(80,80,180,0.3)',   unlockLevel: 6,  icon: '🔵' },
+        { id: 'crimson',  name: 'Crimson Piston',  color: '#cc2222', glowColor: 'rgba(200,50,50,0.3)',   unlockLevel: 9,  icon: '🔴' },
+        { id: 'gold',     name: 'Gold Sovereign',  color: '#ffd700', glowColor: 'rgba(255,215,0,0.4)',   unlockLevel: 12, icon: '✨' },
+        { id: 'void',     name: 'Void Gear',       color: '#111111', glowColor: 'rgba(120,0,200,0.4)',   unlockLevel: 16, icon: '🌑' },
+        { id: 'neon',     name: 'Neon Crank',      color: '#00ffcc', glowColor: 'rgba(0,255,200,0.4)',   unlockLevel: 20, icon: '💚' },
+    ];
 
-        let provider, signer, contract, userAddress;
-        let selectedMoveIdx = 0;
-        let lobbyRefreshInterval, activityRefreshInterval, chatRefreshInterval;
-        let currentLobbyFilter = 'all';
-        let userNotifications = [];
-
-        // Win/Loss Messages
-        const winMessages = [
-            "Victory is yours! The void smiles upon you—strike again while fortune favors! ⚡",
-            "You won! Your enemies tremble. Don't waste this momentum! 🔥",
-            "Triumph! The dark forces align with you. Seize another victory! 🌟",
-            "Success! You're on a roll. The grotto demands more! 💀",
-            "Victory claimed! Your power grows. Continue the conquest! ⚔️"
-        ];
-
-        const lossMessages = [
-            "Defeat... but the night is young. Next time, darkness will be yours! 🌙",
-            "You fell this round. Every master has tasted defeat—rise again! 💪",
-            "Not this time... but the grotto rewards persistence. Try again! 🎯",
-            "Loss stings, but champions are forged in failure. Redeem yourself! ⚡",
-            "Defeat is temporary. Your comeback story begins now! 🔮"
-        ];
-
-        const drawMessages = [
-            "A stalemate! The forces were balanced. Break the tie! ⚖️",
-            "Draw! Neither victor nor vanquished. Seek another challenger! 🤝",
-            "Equilibrium achieved. The next ritual awaits! 🌀"
-        ];
-
-        async function init() {
-            if (window.ethereum) {
-                provider = new ethers.BrowserProvider(window.ethereum);
-                document.getElementById('connect-btn').addEventListener('click', connectWallet);
-                
-                await refreshLobby();
-                await refreshActivityFeed();
-                await refreshChat();
-                loadNotifications();
-                
-                lobbyRefreshInterval = setInterval(refreshLobby, 10000);
-                activityRefreshInterval = setInterval(refreshActivityFeed, 5000);
-                chatRefreshInterval = setInterval(refreshChat, 3000);
-                
-                _supabase.channel('grotto_game_updates')
-                    .on('postgres_changes', { event: '*', schema: 'public', table: 'grotto_games' }, () => {
-                        refreshLobby();
-                        refreshActivityFeed();
-                    })
-                    .subscribe();
-
-                _supabase.channel('grotto_chat_updates')
-                    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'grotto_chat' }, () => {
-                        refreshChat();
-                    })
-                    .subscribe();
-
-                window.ethereum.on('accountsChanged', () => window.location.reload());
-                window.ethereum.on('chainChanged', () => window.location.reload());
-            }
+    // ══════════════════════════════════════════════
+    // MAP PACKS
+    // ══════════════════════════════════════════════
+    // Tile key: 0=Floor 1=Wall 2=Cog 3=Exit 4=Steam 5=Plate 6=Gate 7=unused 8=Spike 9=Conveyor-R 10=Conveyor-L 11=Conveyor-D 12=Conveyor-U 13=Crusher-H 14=Teleport-A 15=Teleport-B 16=Ice 17=BonusCog
+    const MAP_PACKS = [
+        {
+            id: 'standard',
+            name: 'Standard Works',
+            desc: '10 hand-crafted chambers. The classic experience.',
+            levels: [
+                // Level 1 – Tutorial
+                { map: [[1,1,1,1,1,1,1,1,1,1,1],[1,0,0,0,2,0,0,0,0,2,1],[1,0,1,1,1,0,1,1,1,0,1],[1,2,0,0,0,0,0,0,0,2,1],[1,0,1,1,1,3,1,1,1,0,1],[1,1,1,1,1,1,1,1,1,1,1]] },
+                // Level 2 – Plates & Gates
+                { map: [[1,1,1,1,1,1,1,1,1,1,1],[1,2,4,0,0,0,0,0,4,2,1],[1,0,1,1,5,0,1,1,1,0,1],[1,0,0,0,6,0,0,0,0,0,1],[1,0,1,1,1,0,1,1,1,0,1],[1,2,0,4,0,3,0,4,0,2,1],[1,1,1,1,1,1,1,1,1,1,1]] },
+                // Level 3 – Crossfire
+                { map: [[1,1,1,1,1,1,1,1,1,1,1],[1,2,0,0,1,2,1,0,0,2,1],[1,4,1,0,1,0,1,0,1,4,1],[1,0,0,5,6,0,6,5,0,0,1],[1,4,1,0,1,0,1,0,1,4,1],[1,2,0,0,1,3,1,0,0,2,1],[1,1,1,1,1,1,1,1,1,1,1]] },
+                // Level 4 – Spikes Intro
+                { map: [[1,1,1,1,1,1,1,1,1,1,1],[1,2,0,8,0,0,0,8,0,2,1],[1,0,0,1,0,2,0,1,0,0,1],[1,8,1,0,0,0,0,0,1,8,1],[1,0,0,1,4,0,4,1,0,0,1],[1,2,0,8,0,3,0,8,0,2,1],[1,1,1,1,1,1,1,1,1,1,1]] },
+                // Level 5 – Ice Rink
+                { map: [[1,1,1,1,1,1,1,1,1,1,1],[1,2,16,16,16,2,16,16,16,2,1],[1,0,16,1,4,0,4,1,16,0,1],[1,0,16,4,0,0,0,4,16,0,1],[1,0,16,1,0,0,0,1,16,0,1],[1,2,16,16,16,3,16,16,16,2,1],[1,1,1,1,1,1,1,1,1,1,1]] },
+                // Level 6 – Conveyor Chaos
+                { map: [[1,1,1,1,1,1,1,1,1,1,1],[1,2,9,9,9,9,9,9,9,0,1],[1,0,1,1,1,0,1,1,1,2,1],[1,0,12,0,0,0,0,0,11,0,1],[1,0,1,1,1,0,1,1,1,2,1],[1,2,10,10,10,3,10,10,10,0,1],[1,1,1,1,1,1,1,1,1,1,1]] },
+                // Level 7 – Teleporters
+                { map: [[1,1,1,1,1,1,1,1,1,1,1],[1,2,0,0,14,0,15,0,0,2,1],[1,0,1,1,1,4,1,1,1,0,1],[1,0,0,2,0,0,0,2,0,0,1],[1,0,1,1,1,4,1,1,1,0,1],[1,2,0,0,15,3,14,0,0,2,1],[1,1,1,1,1,1,1,1,1,1,1]] },
+                // Level 8 – Crushers
+                { map: [[1,1,1,1,1,1,1,1,1,1,1],[1,2,0,1,0,2,0,1,0,2,1],[1,0,13,1,0,0,0,1,13,0,1],[1,0,0,0,0,0,0,0,0,0,1],[1,0,13,1,4,0,4,1,13,0,1],[1,2,0,1,0,3,0,1,0,2,1],[1,1,1,1,1,1,1,1,1,1,1]] },
+                // Level 9 – Bonus Vault
+                { map: [[1,1,1,1,1,1,1,1,1,1,1],[1,17,8,0,0,17,0,0,8,17,1],[1,0,1,5,1,0,1,5,1,0,1],[1,0,6,0,0,0,0,0,6,0,1],[1,0,1,5,1,0,1,5,1,0,1],[1,17,8,0,0,3,0,0,8,17,1],[1,1,1,1,1,1,1,1,1,1,1]] },
+                // Level 10 – Grand Finale
+                { map: [[1,1,1,1,1,1,1,1,1,1,1],[1,2,9,9,8,17,8,10,10,2,1],[1,4,1,5,1,0,1,5,1,4,1],[1,0,6,0,14,0,15,0,6,0,1],[1,4,1,13,1,16,1,13,1,4,1],[1,2,0,8,0,3,0,8,0,2,1],[1,1,1,1,1,1,1,1,1,1,1]] }
+            ]
+        },
+        {
+            id: 'inferno',
+            name: 'Inferno Depths',
+            desc: '8 brutal heat-forge levels. Hazards everywhere.',
+            levels: [
+                { map: [[1,1,1,1,1,1,1,1,1,1,1],[1,2,4,4,4,2,4,4,4,2,1],[1,4,1,0,1,0,1,0,1,4,1],[1,4,0,0,0,0,0,0,0,4,1],[1,4,1,0,1,0,1,0,1,4,1],[1,2,4,4,4,3,4,4,4,2,1],[1,1,1,1,1,1,1,1,1,1,1]] },
+                { map: [[1,1,1,1,1,1,1,1,1,1,1],[1,2,8,4,8,2,8,4,8,2,1],[1,4,1,8,1,0,1,8,1,4,1],[1,0,0,0,5,0,5,0,0,0,1],[1,4,1,6,1,0,1,6,1,4,1],[1,2,8,4,8,3,8,4,8,2,1],[1,1,1,1,1,1,1,1,1,1,1]] },
+                { map: [[1,1,1,1,1,1,1,1,1,1,1],[1,2,4,0,2,0,2,0,4,2,1],[1,0,1,4,1,0,1,4,1,0,1],[1,0,4,0,0,8,0,0,4,0,1],[1,0,1,4,1,0,1,4,1,0,1],[1,2,4,0,2,3,2,0,4,2,1],[1,1,1,1,1,1,1,1,1,1,1]] },
+                { map: [[1,1,1,1,1,1,1,1,1,1,1],[1,17,13,4,0,2,0,4,13,17,1],[1,4,1,1,1,0,1,1,1,4,1],[1,0,0,0,0,0,0,0,0,0,1],[1,4,1,14,1,4,1,15,1,4,1],[1,17,8,4,0,3,0,4,8,17,1],[1,1,1,1,1,1,1,1,1,1,1]] },
+                { map: [[1,1,1,1,1,1,1,1,1,1,1],[1,2,9,9,9,2,10,10,10,2,1],[1,4,1,1,5,0,5,1,1,4,1],[1,0,6,0,0,0,0,0,6,0,1],[1,4,1,1,4,8,4,1,1,4,1],[1,2,0,0,0,3,0,0,0,2,1],[1,1,1,1,1,1,1,1,1,1,1]] },
+                { map: [[1,1,1,1,1,1,1,1,1,1,1],[1,2,8,13,8,2,8,13,8,2,1],[1,4,1,0,1,4,1,0,1,4,1],[1,0,0,5,0,0,0,5,0,0,1],[1,4,1,6,1,4,1,6,1,4,1],[1,2,8,4,8,3,8,4,8,2,1],[1,1,1,1,1,1,1,1,1,1,1]] },
+                { map: [[1,1,1,1,1,1,1,1,1,1,1],[1,2,4,9,4,17,4,10,4,2,1],[1,0,1,1,1,4,1,1,1,0,1],[1,0,0,0,14,4,15,0,0,0,1],[1,0,1,13,1,4,1,13,1,0,1],[1,2,4,8,4,3,4,8,4,2,1],[1,1,1,1,1,1,1,1,1,1,1]] },
+                { map: [[1,1,1,1,1,1,1,1,1,1,1],[1,17,4,8,4,17,4,8,4,17,1],[1,4,1,1,5,4,5,1,1,4,1],[1,0,6,4,0,8,0,4,6,0,1],[1,4,1,13,5,4,5,13,1,4,1],[1,17,4,8,4,3,4,8,4,17,1],[1,1,1,1,1,1,1,1,1,1,1]] }
+            ]
+        },
+        {
+            id: 'arcane',
+            name: 'Arcane Labyrinth',
+            desc: '7 complex puzzle chambers. Logic over speed.',
+            levels: [
+                { map: [[1,1,1,1,1,1,1,1,1,1,1],[1,2,0,1,0,0,0,1,0,2,1],[1,0,1,1,5,1,5,1,1,0,1],[1,0,0,0,6,0,6,0,0,0,1],[1,0,1,1,5,1,5,1,1,0,1],[1,2,0,1,0,3,0,1,0,2,1],[1,1,1,1,1,1,1,1,1,1,1]] },
+                { map: [[1,1,1,1,1,1,1,1,1,1,1],[1,2,16,16,2,0,2,16,16,2,1],[1,0,16,1,1,0,1,1,16,0,1],[1,0,14,0,0,0,0,0,15,0,1],[1,0,16,1,5,4,5,1,16,0,1],[1,2,16,6,0,3,0,6,16,2,1],[1,1,1,1,1,1,1,1,1,1,1]] },
+                { map: [[1,1,1,1,1,1,1,1,1,1,1],[1,2,9,9,0,2,0,10,10,2,1],[1,0,1,1,8,1,8,1,1,0,1],[1,0,0,0,0,0,0,0,0,0,1],[1,0,1,5,1,4,1,5,1,0,1],[1,2,0,6,0,3,0,6,0,2,1],[1,1,1,1,1,1,1,1,1,1,1]] },
+                { map: [[1,1,1,1,1,1,1,1,1,1,1],[1,17,0,14,0,2,0,15,0,17,1],[1,0,1,1,1,0,1,1,1,0,1],[1,0,8,0,0,0,0,0,8,0,1],[1,0,1,1,16,0,16,1,1,0,1],[1,17,0,0,16,3,16,0,0,17,1],[1,1,1,1,1,1,1,1,1,1,1]] },
+                { map: [[1,1,1,1,1,1,1,1,1,1,1],[1,2,13,0,2,8,2,0,13,2,1],[1,0,1,5,1,0,1,5,1,0,1],[1,0,0,6,0,0,0,6,0,0,1],[1,0,1,5,1,16,1,5,1,0,1],[1,2,13,0,2,3,2,0,13,2,1],[1,1,1,1,1,1,1,1,1,1,1]] },
+                { map: [[1,1,1,1,1,1,1,1,1,1,1],[1,2,4,9,14,17,15,10,4,2,1],[1,0,1,1,1,0,1,1,1,0,1],[1,0,0,8,0,0,0,8,0,0,1],[1,0,1,13,1,16,1,13,1,0,1],[1,2,4,0,5,3,5,0,4,2,1],[1,1,1,1,1,1,1,1,1,1,1]] },
+                { map: [[1,1,1,1,1,1,1,1,1,1,1],[1,17,4,8,13,17,13,8,4,17,1],[1,4,1,5,1,4,1,5,1,4,1],[1,0,6,16,14,0,15,16,6,0,1],[1,4,1,5,1,4,1,5,1,4,1],[1,17,9,8,13,3,13,8,10,17,1],[1,1,1,1,1,1,1,1,1,1,1]] }
+            ]
         }
+    ];
 
-        async function checkNetwork() {
-            const network = await provider.getNetwork();
-            const currentChainIdHex = "0x" + network.chainId.toString(16).toUpperCase();
-            
-            if (currentChainIdHex !== CHAIN_ID.toUpperCase()) {
-                try {
-                    await window.ethereum.request({
-                        method: 'wallet_switchEthereumChain',
-                        params: [{ chainId: CHAIN_ID }],
-                    });
-                } catch (switchError) {
-                    if (switchError.code === 4902) {
-                        try {
-                            await window.ethereum.request({
-                                method: 'wallet_addEthereumChain',
-                                params: [{
-                                    chainId: CHAIN_ID,
-                                    chainName: CHAIN_NAME,
-                                    nativeCurrency: { name: CURRENCY_SYMBOL, symbol: CURRENCY_SYMBOL, decimals: 18 },
-                                    rpcUrls: [RPC_URL],
-                                    blockExplorerUrls: [EXPLORER_URL]
-                                }]
-                            });
-                        } catch (addError) {
-                            showToast("Failed to add Grotto network");
-                            return false;
-                        }
-                    } else {
-                        showToast("Switch to The Grotto");
-                        return false;
-                    }
-                }
-            }
-            return true;
-        }
+    // ══════════════════════════════════════════════
+    // GAME STATE
+    // ══════════════════════════════════════════════
+    let selectedMode = 'classic';
+    let selectedMapPackId = 'standard';
+    let selectedSkinId = 'copper';
+    let highestLevel = parseInt(localStorage.getItem('cs_highest_level') || '1');
 
-        async function connectWallet() {
-            try {
-                const accounts = await provider.send("eth_requestAccounts", []);
-                userAddress = accounts[0];
-                signer = await provider.getSigner();
-                
-                if (!(await checkNetwork())) return;
+    let runStats = { totalScore: 0, totalCogs: 0, levelsCompleted: 0, damageTaken: 0, bestCombo: 1, startTime: 0 };
 
-                contract = new ethers.Contract(CONTRACT_ADDR, ABI, signer);
-                document.getElementById('connect-btn').classList.add('hidden');
-                document.getElementById('account-info').classList.remove('hidden');
-                
-                const shortened = userAddress.slice(0, 6) + '...' + userAddress.slice(-4);
-                document.getElementById('user-address').innerText = shortened;
-                
-                updateBalance();
-                refreshLobby();
-                loadNotifications();
-            } catch (err) { 
-                console.error(err);
-                showToast("Portal summoning failed"); 
-            }
-        }
+    let gameState = {
+        level: 1,
+        health: 100,
+        lives: 5,
+        cogs: 0,
+        requiredCogs: 0,
+        score: 0,
+        combo: 1,
+        comboTimer: 0,
+        player: { x: 1, y: 1, rotation: 0, visualX: 1, visualY: 1, lastMove: 0 },
+        map: [],
+        hazards: [],
+        particles: [],
+        crushers: [],
+        conveyors: [],
+        teleporters: [],
+        exitOpen: false,
+        gameOver: false,
+        plates: [],
+        gates: [],
+        blitzTimer: 60,
+        blitzInterval: null,
+        fogRadius: 3,
+        mode: 'classic',
+        mapPack: null,
+    };
 
-        function copyAddress() {
-            if (userAddress) {
-                navigator.clipboard.writeText(userAddress).then(() => {
-                    showToast("Address copied to void");
-                }).catch(() => {
-                    showToast("Copy failed");
-                });
-            }
-        }
-
-        async function updateBalance() {
-            if (!userAddress || !provider) return;
-            try {
-                const balance = await provider.getBalance(userAddress);
-                document.getElementById('user-balance').innerText = `${parseFloat(ethers.formatEther(balance)).toFixed(2)} $${CURRENCY_SYMBOL}`;
-            } catch (e) { console.error("Balance error", e); }
-        }
-
-        function selectMove(idx) {
-            selectedMoveIdx = idx;
-            document.querySelectorAll('.move-select').forEach(btn => btn.classList.remove('selected'));
-            document.getElementById(`move-${idx}`).classList.add('selected');
-        }
-
-        async function handleCreateGame() {
-            if (!signer) return showToast("Summon portal first");
-            if (selectedMoveIdx === 0) return showToast("Select your force");
-            if (!(await checkNetwork())) return;
-            
-            const createBtn = document.getElementById('create-btn');
-            createBtn.disabled = true;
-            
-            const wagerInput = document.getElementById('wager-amount').value;
-            const wagerValue = ethers.parseEther(wagerInput);
-            const timeoutValue = document.getElementById('timeout-select').value;
-            const salt = ethers.hexlify(ethers.randomBytes(32));
-            
-            try {
-                const nextGameId = (await contract.gameCounter()) + BigInt(1);
-                
-                const encoded = ethers.AbiCoder.defaultAbiCoder().encode(
-                    ["uint8", "string", "address", "uint256"],
-                    [selectedMoveIdx, salt, userAddress, nextGameId]
-                );
-                const hash = ethers.keccak256(encoded);
-
-                showToast("Encrypting ritual...");
-                const tx = await contract.createGame(hash, timeoutValue, { value: wagerValue });
-                
-                showToast("Awaiting the void...");
-                const receipt = await tx.wait();
-                
-                const secrets = JSON.parse(localStorage.getItem('grotto_secrets') || '{}');
-                secrets[hash] = { 
-                    move: selectedMoveIdx, 
-                    salt: salt,
-                    gameId: nextGameId.toString(),
-                    address: userAddress.toLowerCase()
-                };
-                localStorage.setItem('grotto_secrets', JSON.stringify(secrets));
-
-                let gameId = Number(nextGameId);
-
-                try {
-                    for (const log of receipt.logs) {
-                        try {
-                            if (log.address.toLowerCase() !== CONTRACT_ADDR.toLowerCase()) continue;
-                            const parsed = contract.interface.parseLog({
-                                topics: log.topics,
-                                data: log.data
-                            });
-                            if (parsed && parsed.name === 'GameCreated') {
-                                gameId = Number(parsed.args.gameId);
-                                break;
-                            }
-                        } catch(e) { continue; }
-                    }
-                } catch (e) { console.warn("Log parsing failed:", e); }
-
-                const { error: sbError } = await _supabase.from('grotto_games')
-                    .insert([{
-                        game_id: gameId,
-                        host: userAddress.toLowerCase(),
-                        wager: wagerInput,
-                        timeout: parseInt(timeoutValue),
-                        status: 0,
-                        commit_hash: hash
-                    }]);
-
-                if (sbError) {
-                    console.error("Supabase error:", sbError);
-                    showToast("⚠️ Ritual invoked but index failed");
-                } else {
-                    showToast("✓ Ritual sealed in darkness");
-                }
-
-                setTimeout(async () => {
-                    await refreshLobby();
-                    createBtn.disabled = false;
-                }, 2000);
-                
-            } catch (err) { 
-                console.error("Creation error:", err);
-                showToast("Ritual invocation failed");
-                createBtn.disabled = false;
-            }
-        }
-
-        async function refreshLobby() {
-            const lobby = document.getElementById('lobby-list');
-            try {
-                const { data: games, error } = await _supabase.from('grotto_games')
-                    .select('*')
-                    .order('game_id', { ascending: false })
-                    .limit(100);
-
-                if (error) {
-                    lobby.innerHTML = `<div class="text-center py-20 text-red-400 uppercase">Archive corrupted</div>`;
-                    return;
-                }
-
-                lobby.innerHTML = '';
-                let displayedCount = 0;
-
-                games.forEach(game => {
-                    const status = Number(game.status);
-                    const isHost = userAddress && game.host === userAddress.toLowerCase();
-                    const isChallenger = userAddress && game.challenger === userAddress.toLowerCase();
-                    
-                    if (currentLobbyFilter === 'open' && status !== 0) return;
-                    if (currentLobbyFilter === 'intercepted' && status !== 1) return;
-                    if (currentLobbyFilter === 'resolved' && status !== 2) return;
-                    
-                    if (status > 1 && !isHost && !isChallenger && currentLobbyFilter === 'all') return;
-
-                    displayedCount++;
-
-                    const div = document.createElement('div');
-                    const borderColor = status == 0 ? '#9333ea' : status == 1 ? '#eab308' : status == 2 ? '#15803d' : '#374151';
-                    
-                    div.className = "p-5 grotto-glass rounded-lg border-l-4 flex flex-col md:flex-row justify-between items-center gap-4 transition hover:bg-purple-900/10";
-                    div.style.borderLeftColor = borderColor;
-                    
-                    let countdownHTML = '';
-                    if (status === 0 || status === 1) {
-                        const createdAt = new Date(game.created_at).getTime() / 1000;
-                        const timeout = game.timeout || 900;
-                        const deadline = createdAt + timeout;
-                        const now = Math.floor(Date.now() / 1000);
-                        const remaining = deadline - now;
-                        
-                        if (remaining > 0) {
-                            const minutes = Math.floor(remaining / 60);
-                            const seconds = remaining % 60;
-                            const timeColor = remaining < 60 ? '#ef4444' : '#9333ea';
-                            countdownHTML = `<span class="text-[11px] ml-2 cinzel" style="color: ${timeColor}">⏱ ${minutes}m ${seconds}s</span>`;
-                        } else {
-                            countdownHTML = `<span class="text-[11px] text-red-500 ml-2 animate-pulse cinzel">⏱ EXPIRED</span>`;
-                        }
-                    }
-                    
-                    let gameInfo = `
-                        <div class="flex-1">
-                            <div class="flex items-center gap-3 mb-2 flex-wrap">
-                                <span class="text-[10px] px-3 py-1 border rounded-full uppercase cinzel tracking-wider" style="border-color: ${borderColor}; color: ${borderColor}">${getStatusText(status)}</span>
-                                <span class="text-[10px] text-purple-500/50 cinzel">ID: ${game.game_id}</span>
-                                ${countdownHTML}
-                            </div>
-                            <div class="cinzel text-purple-200 text-base">
-                                <span class="text-purple-400 font-bold">${game.wager} $${CURRENCY_SYMBOL}</span> 
-                                <span class="text-purple-600 text-[11px] ml-2">FROM ${game.host.slice(0,6)}...</span>`;
-                    
-                    if (status == 2 && game.host_move && game.challenger_move) {
-                        const moves = ['', '☀️ Solar', '🌬️ Oxygen', '🌪️ Dust'];
-                        const hostMove = Number(game.host_move);
-                        const challengerMove = Number(game.challenger_move);
-                        
-                        let winner = '';
-                        if (hostMove === challengerMove) {
-                            winner = '⚖️ STALEMATE';
-                        } else if (
-                            (hostMove === 1 && challengerMove === 2) ||
-                            (hostMove === 2 && challengerMove === 3) ||
-                            (hostMove === 3 && challengerMove === 1)
-                        ) {
-                            winner = `🏆 ${game.host.slice(0,6)}... PREVAILS`;
-                        } else {
-                            winner = `🏆 ${(game.challenger || 'Unknown').slice(0,6)}... PREVAILS`;
-                        }
-                        
-                        gameInfo += `
-                            <div class="text-[11px] mt-2 text-purple-300/60">
-                                ${moves[hostMove]} vs ${moves[challengerMove]}
-                            </div>
-                            <div class="text-[12px] mt-1 font-bold ${hostMove === challengerMove ? 'text-yellow-400' : 'text-green-400'} cinzel">
-                                ${winner}
-                            </div>`;
-                    }
-                    
-                    gameInfo += `
-                            </div>
-                        </div>
-                        <div class="flex gap-2">${getActionButtons(game, isHost, isChallenger)}</div>`;
-                    
-                    div.innerHTML = gameInfo;
-                    lobby.appendChild(div);
-                });
-                
-                if (displayedCount === 0) {
-                    lobby.innerHTML = '<div class="text-center py-20 text-purple-700/50 uppercase italic cinzel">The void is silent...</div>';
-                }
-            } catch (err) { 
-                console.error("Lobby error:", err);
-                lobby.innerHTML = `<div class="text-center py-20 text-red-400">Archive error</div>`;
-            }
-        }
-
-        function setLobbyFilter(filter) {
-            currentLobbyFilter = filter;
-            document.querySelectorAll('.lobby-filter').forEach(btn => btn.classList.remove('active'));
-            document.getElementById(`filter-${filter}`).classList.add('active');
-            refreshLobby();
-        }
-
-        function getActionButtons(game, isHost, isChallenger) {
-            if (game.status == 0) {
-                if (isHost) {
-                    return `<button onclick="handleRefund(${game.game_id})" class="text-[10px] border border-purple-700 px-5 py-2 hover:bg-purple-900/20 uppercase rounded cinzel transition">Retract</button>`;
-                }
-                return `<button onclick="handleChallenge(${game.game_id}, '${game.wager}')" class="btn-grotto text-[11px] px-7 py-3 rounded-lg cinzel">Challenge</button>`;
-            }
-            if (game.status == 1) {
-                if (isHost) {
-                    return `<button onclick="handleResolve(${game.game_id}, '${game.commit_hash}')" class="btn-grotto text-[11px] px-7 py-3 rounded-lg animate-pulse cinzel">Reveal</button>`;
-                }
-                if (isChallenger) {
-                    const now = Math.floor(Date.now() / 1000);
-                    const createdAt = new Date(game.created_at).getTime() / 1000;
-                    const timeout = game.timeout || 900;
-                    const deadline = createdAt + timeout;
-                    
-                    if (now >= deadline) {
-                        return `<button onclick="handleForceForfeit(${game.game_id})" class="btn-grotto text-[11px] px-7 py-3 rounded-lg animate-pulse cinzel">Claim Victory</button>`;
-                    }
-                    return `<span class="text-[10px] text-purple-400 uppercase italic cinzel">⚔️ Awaiting reveal...</span>`;
-                }
-                return `<span class="text-[10px] text-purple-600 uppercase italic cinzel">Ritual active</span>`;
-            }
-            if (game.status == 2) return `<span class="text-[10px] text-green-400 uppercase cinzel">✓ Sealed</span>`;
-            if (game.status == 3) return `<span class="text-[10px] text-gray-600 uppercase cinzel">Retracted</span>`;
-            if (game.status == 4) return `<span class="text-[10px] text-red-600 uppercase cinzel">⚡ Forfeited</span>`;
-            return `<span class="text-[10px] text-gray-700 uppercase cinzel">Dormant</span>`;
-        }
-
-        async function handleChallenge(id, wager) {
-            if (!signer) return showToast("Summon portal first");
-            if (!(await checkNetwork())) return;
-            
-            const move = prompt("Select your force:\n1 - Solar Flare ☀️\n2 - Oxygen Siphon 🌬️\n3 - Dust Storm 🌪️");
-            if (!move || move < 1 || move > 3) return showToast("Invalid force");
-            
-            try {
-                showToast("Accepting challenge...");
-                const gameData = await contract.games(id);
-                const actualWager = gameData.wager;
-                
-                const tx = await contract.challengeGame(id, move, { value: actualWager });
-                showToast("Sealing pact...");
-                await tx.wait();
-                
-                await _supabase.from('grotto_games')
-                    .update({ 
-                        status: 1, 
-                        challenger: userAddress.toLowerCase(),
-                        challenger_move: parseInt(move)
-                    })
-                    .eq('game_id', id);
-                
-                showToast("✓ Challenge accepted");
-                setTimeout(refreshLobby, 1500);
-            } catch (err) { 
-                console.error("Challenge error:", err);
-                showToast("Challenge failed"); 
-            }
-        }
-
-        async function handleResolve(id, hash) {
-            if (!signer) return showToast("Summon portal first");
-            if (!(await checkNetwork())) return;
-            
-            const secrets = JSON.parse(localStorage.getItem('grotto_secrets') || '{}');
-            let secret = secrets[hash];
-            
-            if (!secret) {
-                const manualReveal = confirm("Secret not found in this sanctum. Enter manually?");
-                if (!manualReveal) {
-                    showToast("⚠️ Secret not found");
-                    return;
-                }
-                
-                const move = prompt("Enter your force (1-3):");
-                const salt = prompt("Enter your salt (hex):");
-                
-                if (!move || !salt) return showToast("Cancelled");
-                
-                const encoded = ethers.AbiCoder.defaultAbiCoder().encode(
-                    ["uint8", "string", "address", "uint256"],
-                    [parseInt(move), salt, userAddress, BigInt(id)]
-                );
-                const testHash = ethers.keccak256(encoded);
-                
-                if (testHash.toLowerCase() !== hash.toLowerCase()) {
-                    return showToast("⚠️ Hash mismatch");
-                }
-                
-                secret = { move: parseInt(move), salt: salt };
-            }
-            
-            try {
-                showToast("Revealing truth...");
-                const tx = await contract.resolveGame(id, secret.move, secret.salt);
-                await tx.wait();
-                
-                const gameData = await contract.games(id);
-                const hostMove = Number(gameData.hostMove);
-                const challengerMove = Number(gameData.challengerMove);
-                
-                let resultMsg = "Ritual completed";
-                let isWin = false;
-                let isDraw = false;
-                
-                if (hostMove === challengerMove) {
-                    resultMsg = "⚖️ STALEMATE";
-                    isDraw = true;
-                } else if (
-                    (hostMove === 1 && challengerMove === 2) ||
-                    (hostMove === 2 && challengerMove === 3) ||
-                    (hostMove === 3 && challengerMove === 1)
-                ) {
-                    resultMsg = "🏆 VICTORY!";
-                    isWin = true;
-                } else {
-                    resultMsg = "💀 DEFEAT";
-                    isWin = false;
-                }
-                
-                // Add notification
-                addNotification({
-                    type: isDraw ? 'draw' : (isWin ? 'win' : 'loss'),
-                    gameId: id,
-                    message: resultMsg,
-                    timestamp: Date.now()
-                });
-                
-                await _supabase.from('grotto_games').update({ 
-                    status: 2,
-                    host_move: hostMove,
-                    challenger_move: challengerMove
-                }).eq('game_id', id);
-                
-                setTimeout(refreshLobby, 1000);
-                updateBalance();
-                showToast(resultMsg);
-            } catch (err) { 
-                console.error("Resolve error:", err);
-                showToast("Reveal failed"); 
-            }
-        }
-
-        async function handleRefund(id) {
-            if (!signer) return showToast("Summon portal first");
-            if (!(await checkNetwork())) return;
-            
-            try {
-                showToast("Retracting ritual...");
-                const tx = await contract.refundUnchallenged(id);
-                await tx.wait();
-                
-                await _supabase.from('grotto_games').update({ status: 3 }).eq('game_id', id);
-                refreshLobby();
-                updateBalance();
-                showToast("Heresy returned");
-            } catch (err) { 
-                console.error(err);
-                showToast("Refund failed"); 
-            }
-        }
-
-        async function handleForceForfeit(gameId) {
-            if (!signer) return showToast("Summon portal first");
-            if (!(await checkNetwork())) return;
-            
-            try {
-                showToast("Claiming victory...");
-                const tx = await contract.forceForfeit(gameId);
-                await tx.wait();
-                
-                addNotification({
-                    type: 'win',
-                    gameId: gameId,
-                    message: '🏆 Victory by forfeit',
-                    timestamp: Date.now()
-                });
-                
-                await _supabase.from('grotto_games').update({ status: 4 }).eq('game_id', gameId);
-                refreshLobby();
-                updateBalance();
-                showToast("🏆 Victory by forfeit!");
-            } catch (err) {
-                console.error("Forfeit error:", err);
-                showToast("Forfeit failed");
-            }
-        }
-
-        // Notification System
-        function addNotification(notif) {
-            if (!userAddress) return;
-            
-            const notifications = JSON.parse(localStorage.getItem(`grotto_notifs_${userAddress}`) || '[]');
-            
-            let message = '';
-            if (notif.type === 'win') {
-                message = winMessages[Math.floor(Math.random() * winMessages.length)];
-            } else if (notif.type === 'loss') {
-                message = lossMessages[Math.floor(Math.random() * lossMessages.length)];
-            } else {
-                message = drawMessages[Math.floor(Math.random() * drawMessages.length)];
-            }
-            
-            const newNotif = {
-                ...notif,
-                motivationalMessage: message,
-                read: false
+    // ══════════════════════════════════════════════
+    // UI INIT — build skin/map grids
+    // ══════════════════════════════════════════════
+    function buildMenus() {
+        // Skins
+        const sg = document.getElementById('skin-grid');
+        sg.innerHTML = '';
+        SKINS.forEach(sk => {
+            const el = document.createElement('div');
+            const locked = highestLevel < sk.unlockLevel;
+            el.className = 'skin-swatch' + (locked ? ' locked' : '') + (sk.id === selectedSkinId ? ' active' : '');
+            el.title = sk.name + (locked ? ` (Unlock at level ${sk.unlockLevel})` : '');
+            el.innerHTML = `<span style="font-size:2rem;">${sk.icon}</span>`;
+            el.style.borderColor = sk.color;
+            if (!locked) el.onclick = () => {
+                selectedSkinId = sk.id;
+                document.querySelectorAll('.skin-swatch').forEach(s => s.classList.remove('active'));
+                el.classList.add('active');
             };
-            
-            notifications.unshift(newNotif);
-            localStorage.setItem(`grotto_notifs_${userAddress}`, JSON.stringify(notifications.slice(0, 50)));
-            
-            loadNotifications();
+            sg.appendChild(el);
+        });
+
+        // Maps
+        const mg = document.getElementById('map-grid');
+        mg.innerHTML = '';
+        MAP_PACKS.forEach(mp => {
+            const el = document.createElement('div');
+            el.className = 'map-card' + (mp.id === selectedMapPackId ? ' selected' : '');
+            el.innerHTML = `<div class="map-title">${mp.name}</div><div class="map-detail">${mp.desc}</div>`;
+            el.onclick = () => {
+                selectedMapPackId = mp.id;
+                document.querySelectorAll('.map-card').forEach(m => m.classList.remove('selected'));
+                el.classList.add('selected');
+                updateHomeSummary();
+            };
+            mg.appendChild(el);
+        });
+
+        updateHomeSummary();
+        renderLeaderboard();
+    }
+
+    function updateHomeSummary() {
+        const pack = MAP_PACKS.find(p => p.id === selectedMapPackId);
+        const modeLabels = { classic:'Classic Mode – 5 lives', blitz:'Blitz Mode – 60s timer', ironclad:'Iron Clad – One shot', endless:'Endless – loops forever', phantom:'Phantom – fog of war' };
+        document.getElementById('home-mode-summary').innerHTML = `<b style="color:var(--brass)">${modeLabels[selectedMode]}</b><br>${pack.name} · ${pack.levels.length} levels`;
+    }
+
+    function switchTab(id) {
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+        event.target.classList.add('active');
+    }
+
+    function selectMode(mode, el) {
+        selectedMode = mode;
+        document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('selected'));
+        el.classList.add('selected');
+        updateHomeSummary();
+    }
+
+    // ══════════════════════════════════════════════
+    // LEADERBOARD
+    // ══════════════════════════════════════════════
+    function getScores() { return JSON.parse(localStorage.getItem('cs_scores') || '[]'); }
+    function saveScore(entry) {
+        const scores = getScores();
+        scores.push(entry);
+        scores.sort((a,b) => b.score - a.score);
+        localStorage.setItem('cs_scores', JSON.stringify(scores.slice(0,20)));
+    }
+    function clearScores() { localStorage.removeItem('cs_scores'); renderLeaderboard(); }
+    function renderLeaderboard() {
+        const scores = getScores();
+        const el = document.getElementById('leaderboard-list');
+        if (!scores.length) { el.innerHTML = '<div style="color:#555; text-align:center; padding:20px;">No runs recorded yet.</div>'; return; }
+        el.innerHTML = scores.map((s,i) => `<div class="lb-entry"><span>#${i+1} ${s.mode} · ${s.map}</span><span>${s.score.toLocaleString()} pts · Lv${s.level}</span></div>`).join('');
+    }
+
+    // ══════════════════════════════════════════════
+    // GAME START / INIT
+    // ══════════════════════════════════════════════
+    function startGame() {
+        document.getElementById('home-screen').style.display = 'none';
+        document.getElementById('score-screen').style.display = 'none';
+        document.getElementById('game-ui').style.display = 'block';
+        gameState.mode = selectedMode;
+        gameState.mapPack = MAP_PACKS.find(p => p.id === selectedMapPackId);
+        gameState.lives = selectedMode === 'ironclad' ? 1 : selectedMode === 'blitz' ? 3 : 5;
+        runStats = { totalScore: 0, totalCogs: 0, levelsCompleted: 0, damageTaken: 0, bestCombo: 1, startTime: Date.now() };
+        document.getElementById('mode-badge').innerText = selectedMode.toUpperCase();
+        document.getElementById('map-badge').innerText = gameState.mapPack.name.toUpperCase();
+        document.getElementById('timer-group').style.display = selectedMode === 'blitz' ? 'flex' : 'none';
+        initLevel(1);
+        requestAnimationFrame(gameLoop);
+    }
+
+    function goHome() {
+        clearInterval(gameState.blitzInterval);
+        document.getElementById('msg-modal').style.display = 'none';
+        document.getElementById('score-screen').style.display = 'none';
+        document.getElementById('game-ui').style.display = 'none';
+        document.getElementById('home-screen').style.display = 'flex';
+        buildMenus();
+    }
+
+    function initLevel(idx) {
+        clearInterval(gameState.blitzInterval);
+        const levels = gameState.mapPack ? gameState.mapPack.levels : MAP_PACKS[0].levels;
+        const levelData = levels[(idx - 1) % levels.length];
+
+        gameState.map = JSON.parse(JSON.stringify(levelData.map));
+        gameState.level = idx;
+        gameState.health = gameState.mode === 'ironclad' ? 1 : 100;
+        gameState.cogs = 0; gameState.requiredCogs = 0;
+        gameState.score = gameState.score || 0;
+        gameState.combo = 1; gameState.comboTimer = 0;
+        gameState.player.x = 1; gameState.player.y = 1;
+        gameState.player.visualX = 1; gameState.player.visualY = 1;
+        gameState.gameOver = false; gameState.exitOpen = false;
+        gameState.plates = []; gameState.gates = []; gameState.hazards = [];
+        gameState.particles = []; gameState.crushers = []; gameState.conveyors = [];
+        gameState.teleporters = [];
+
+        // Find player start — first open cell
+        outer: for(let ry=0; ry<gameState.map.length; ry++) {
+            for(let rx=0; rx<COLS; rx++) {
+                if(gameState.map[ry][rx] === 0) { gameState.player.x = rx; gameState.player.y = ry; gameState.player.visualX = rx; gameState.player.visualY = ry; break outer; }
+            }
         }
 
-        function loadNotifications() {
-            if (!userAddress) return;
-            
-            const notifications = JSON.parse(localStorage.getItem(`grotto_notifs_${userAddress}`) || '[]');
-            userNotifications = notifications;
-            
-            const unreadCount = notifications.filter(n => !n.read).length;
-            const badge = document.getElementById('notification-badge');
-            
-            if (unreadCount > 0) {
-                badge.textContent = unreadCount;
-                badge.classList.remove('hidden');
+        for(let y=0; y<gameState.map.length; y++) {
+            for(let x=0; x<COLS; x++) {
+                const t = gameState.map[y][x];
+                if(t === 2 || t === 17) gameState.requiredCogs++;
+                if(t === 4) gameState.hazards.push({x, y, timer: Math.random()*100, active:false});
+                if(t === 5) gameState.plates.push({x, y, active:false});
+                if(t === 6) gameState.gates.push({x, y});
+                if(t === 13) gameState.crushers.push({x, y, offset:0, dir:1, phase:Math.random()*Math.PI*2});
+                if(t===9||t===10||t===11||t===12) gameState.conveyors.push({x, y, type:t});
+                if(t===14||t===15) gameState.teleporters.push({x, y, type:t});
+            }
+        }
+
+        // Blitz timer
+        if(gameState.mode === 'blitz') {
+            gameState.blitzTimer = 60;
+            document.getElementById('timer-display').innerText = '60';
+            gameState.blitzInterval = setInterval(() => {
+                gameState.blitzTimer--;
+                document.getElementById('timer-display').innerText = gameState.blitzTimer;
+                if(gameState.blitzTimer <= 10) document.getElementById('timer-display').style.color = '#ff4444';
+                else document.getElementById('timer-display').style.color = '#ff8844';
+                if(gameState.blitzTimer <= 0) {
+                    clearInterval(gameState.blitzInterval);
+                    takeDamage(100, 'TIME EXPIRED');
+                }
+            }, 1000);
+        }
+
+        updateUI();
+        document.getElementById('msg-modal').style.display = 'none';
+        canvas.classList.remove('shake');
+        canvas.classList.add('level-flash');
+        setTimeout(() => canvas.classList.remove('level-flash'), 800);
+
+        if(idx > highestLevel) {
+            highestLevel = idx;
+            localStorage.setItem('cs_highest_level', idx);
+        }
+    }
+
+    function updateUI() {
+        document.getElementById('cog-count').innerText = `${gameState.cogs} / ${gameState.requiredCogs}`;
+        document.getElementById('level-num').innerText = gameState.level;
+        document.getElementById('health-bar').style.width = (gameState.mode === 'ironclad' ? 100 : gameState.health) + "%";
+        document.getElementById('score-display').innerText = gameState.score.toLocaleString();
+        document.getElementById('combo-display').innerText = 'x' + gameState.combo;
+        document.getElementById('combo-display').style.color = gameState.combo >= 5 ? '#ff4' : gameState.combo >= 3 ? '#fa0' : 'var(--gold)';
+    }
+
+    // ══════════════════════════════════════════════
+    // DRAWING
+    // ══════════════════════════════════════════════
+    function drawGear(x, y, color, rot, size=20, teeth=8) {
+        ctx.save();
+        ctx.translate(x + TILE_SIZE/2, y + TILE_SIZE/2);
+        ctx.rotate(rot);
+        ctx.fillStyle = color;
+        for(let i=0; i<teeth; i++) {
+            ctx.rotate((Math.PI*2)/teeth);
+            ctx.fillRect(-size-4, -size/6, size*2+8, size/3);
+        }
+        ctx.beginPath(); ctx.arc(0, 0, size, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = 'rgba(0,0,0,0.4)';
+        ctx.beginPath(); ctx.arc(0, 0, size*0.5, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = color;
+        ctx.beginPath(); ctx.arc(0, 0, size*0.2, 0, Math.PI*2); ctx.fill();
+        ctx.restore();
+    }
+
+    function drawTile(x, y, type) {
+        const px = x*TILE_SIZE, py = y*TILE_SIZE;
+        ctx.fillStyle = '#151515';
+        ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+
+        if(type === 1) { // Wall
+            ctx.fillStyle = '#222';
+            ctx.fillRect(px+2, py+2, TILE_SIZE-4, TILE_SIZE-4);
+            ctx.strokeStyle = '#333'; ctx.lineWidth=2;
+            ctx.strokeRect(px+8, py+8, TILE_SIZE-16, TILE_SIZE-16);
+            ctx.fillStyle = '#444';
+            [6, TILE_SIZE-6].forEach(rx => [6, TILE_SIZE-6].forEach(ry => {
+                ctx.beginPath(); ctx.arc(px+rx, py+ry, 2, 0, Math.PI*2); ctx.fill();
+            }));
+        } else if(type === 2) { // Cog
+            drawGear(px, py, '#b5a642', Date.now()/500, 12, 6);
+        } else if(type === 17) { // Bonus Cog
+            drawGear(px, py, '#ffd700', Date.now()/300, 14, 8);
+            ctx.shadowBlur = 8; ctx.shadowColor = '#ffd700';
+            ctx.shadowBlur = 0;
+        } else if(type === 3) { // Exit
+            ctx.fillStyle = gameState.exitOpen ? '#4d2' : '#300';
+            ctx.beginPath(); ctx.arc(px+TILE_SIZE/2, py+TILE_SIZE/2, 20, 0, Math.PI*2); ctx.fill();
+            ctx.strokeStyle = '#b87333'; ctx.lineWidth = 4; ctx.stroke();
+            if(gameState.exitOpen) {
+                ctx.shadowBlur = 15; ctx.shadowColor = '#4d2';
+                ctx.beginPath(); ctx.arc(px+TILE_SIZE/2, py+TILE_SIZE/2, 10, 0, Math.PI*2); ctx.fill();
+                ctx.shadowBlur = 0;
+            }
+        } else if(type === 5) { // Plate
+            const p = gameState.plates.find(p=>p.x===x && p.y===y);
+            ctx.fillStyle = p?.active ? '#4cf' : '#446';
+            ctx.fillRect(px+10, py+10, TILE_SIZE-20, TILE_SIZE-20);
+            ctx.strokeStyle = '#000'; ctx.lineWidth = 1; ctx.strokeRect(px+10, py+10, TILE_SIZE-20, TILE_SIZE-20);
+        } else if(type === 6) { // Gate
+            ctx.fillStyle = '#555'; ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+            ctx.strokeStyle = '#b87333'; ctx.lineWidth = 3;
+            for(let i=0; i<3; i++) ctx.strokeRect(px+6, py+6+(i*14), TILE_SIZE-12, 10);
+        } else if(type === 8) { // Spike Trap
+            const spikeAnim = Math.sin(Date.now()/400);
+            if(spikeAnim > 0.4) {
+                ctx.fillStyle = '#ff2222';
+                ctx.shadowBlur = 8; ctx.shadowColor = '#ff0000';
             } else {
-                badge.classList.add('hidden');
+                ctx.fillStyle = '#551111';
+                ctx.shadowBlur = 0;
             }
-            
-            renderNotifications();
-        }
-
-        function renderNotifications() {
-            const list = document.getElementById('notification-list');
-            
-            if (userNotifications.length === 0) {
-                list.innerHTML = '<div class="p-8 text-center text-purple-700/50 italic">No omens to reveal...</div>';
-                return;
+            for(let si=0; si<5; si++) {
+                ctx.beginPath();
+                const sx = px + 8 + si*10, sy = py + TILE_SIZE;
+                ctx.moveTo(sx, sy); ctx.lineTo(sx+5, py+8); ctx.lineTo(sx+10, sy); ctx.fill();
             }
-            
-            list.innerHTML = userNotifications.map(notif => {
-                const bgClass = notif.type === 'win' ? 'bg-green-900/10' : notif.type === 'loss' ? 'bg-red-900/10' : 'bg-yellow-900/10';
-                const borderClass = notif.type === 'win' ? 'win' : notif.type === 'loss' ? 'loss' : '';
-                
-                return `
-                    <div class="notification-item ${borderClass} p-4 ${bgClass} ${notif.read ? 'opacity-50' : ''}">
-                        <div class="flex items-start justify-between gap-3">
-                            <div class="flex-1">
-                                <div class="text-sm font-semibold text-purple-300 mb-1">${notif.message}</div>
-                                <div class="text-xs text-purple-400/70 mb-2">Game #${notif.gameId} • ${getTimeAgo(new Date(notif.timestamp))}</div>
-                                <div class="text-sm text-purple-200/80 italic leading-relaxed">${notif.motivationalMessage}</div>
-                            </div>
-                            ${!notif.read ? '<div class="w-2 h-2 bg-purple-500 rounded-full flex-shrink-0"></div>' : ''}
-                        </div>
-                    </div>
-                `;
-            }).join('');
+            ctx.shadowBlur = 0;
+        } else if(type === 9 || type === 10 || type === 11 || type === 12) { // Conveyor
+            ctx.fillStyle = '#1e1e2e'; ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+            ctx.strokeStyle = '#4466aa'; ctx.lineWidth = 1; ctx.strokeRect(px+2, py+2, TILE_SIZE-4, TILE_SIZE-4);
+            const anim = (Date.now() / 80) % TILE_SIZE;
+            ctx.fillStyle = '#4466aa';
+            if(type === 9) { // right
+                for(let a=0; a<3; a++) ctx.fillRect(px + (anim + a*18)%TILE_SIZE, py+TILE_SIZE/2-3, 12, 6);
+                ctx.fillText('▶', px+TILE_SIZE/2-6, py+TILE_SIZE/2+5);
+            } else if(type === 10) { // left
+                for(let a=0; a<3; a++) ctx.fillRect(px + TILE_SIZE - (anim + a*18)%TILE_SIZE, py+TILE_SIZE/2-3, 12, 6);
+            } else if(type === 11) { // down
+                for(let a=0; a<3; a++) ctx.fillRect(px+TILE_SIZE/2-3, py + (anim + a*18)%TILE_SIZE, 6, 12);
+            } else if(type === 12) { // up
+                for(let a=0; a<3; a++) ctx.fillRect(px+TILE_SIZE/2-3, py + TILE_SIZE - (anim+a*18)%TILE_SIZE, 6, 12);
+            }
+        } else if(type === 13) { // Crusher
+            const c = gameState.crushers.find(c=>c.x===x && c.y===y);
+            const off = c ? Math.sin(Date.now()/500 + c.phase) * 10 : 0;
+            ctx.fillStyle = '#662222'; ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+            ctx.fillStyle = '#cc4444'; ctx.fillRect(px+4+off, py+4, TILE_SIZE/2-4, TILE_SIZE-8);
+            ctx.fillStyle = '#cc4444'; ctx.fillRect(px+TILE_SIZE/2-off, py+4, TILE_SIZE/2-4, TILE_SIZE-8);
+        } else if(type === 14 || type === 15) { // Teleporter
+            const col = type === 14 ? '#aa44ff' : '#44ffaa';
+            ctx.fillStyle = col + '33'; ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+            ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.strokeRect(px+4, py+4, TILE_SIZE-8, TILE_SIZE-8);
+            ctx.fillStyle = col;
+            const pulse = 0.5 + 0.5*Math.sin(Date.now()/300);
+            ctx.globalAlpha = pulse;
+            ctx.beginPath(); ctx.arc(px+TILE_SIZE/2, py+TILE_SIZE/2, 12, 0, Math.PI*2); ctx.fill();
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = '#fff'; ctx.font = '14px monospace'; ctx.fillText(type===14?'A':'B', px+TILE_SIZE/2-5, py+TILE_SIZE/2+5);
+        } else if(type === 16) { // Ice
+            ctx.fillStyle = '#bbddff22'; ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+            ctx.strokeStyle = '#aaccff'; ctx.lineWidth = 1; ctx.strokeRect(px+2, py+2, TILE_SIZE-4, TILE_SIZE-4);
+            ctx.fillStyle = '#aaccff44';
+            for(let i=0; i<3; i++) { ctx.beginPath(); ctx.arc(px+15+i*12, py+15+i*10, 4, 0, Math.PI*2); ctx.fill(); }
+        }
+    }
+
+    // ══════════════════════════════════════════════
+    // MOVEMENT & MECHANICS
+    // ══════════════════════════════════════════════
+    function movePlayer(dx, dy) {
+        if(gameState.gameOver) return;
+        const now = Date.now();
+        if(now - gameState.player.lastMove < 150) return;
+
+        let nx = gameState.player.x + dx, ny = gameState.player.y + dy;
+        if(nx < 0 || nx >= COLS || ny < 0 || ny >= gameState.map.length) return;
+
+        const t = gameState.map[ny][nx];
+        if(t === 1 || t === 6) return;
+
+        gameState.player.x = nx; gameState.player.y = ny;
+        gameState.player.rotation += (dx+dy)*0.8;
+        gameState.player.lastMove = now;
+
+        // Combo decay timer
+        if(now - gameState.comboTimer > 2500) gameState.combo = 1;
+
+        // Cog collection
+        if(t === 2) {
+            gameState.map[ny][nx] = 0; gameState.cogs++;
+            const pts = 100 * gameState.combo;
+            gameState.score += pts; runStats.totalScore += pts; runStats.totalCogs++;
+            gameState.combo = Math.min(gameState.combo + 1, 10);
+            if(gameState.combo > runStats.bestCombo) runStats.bestCombo = gameState.combo;
+            gameState.comboTimer = now;
+            createParticle(nx, ny, '#ffd700', 15, 8);
+            spawnFloatText(nx, ny, `+${pts}`);
+            if(gameState.cogs >= gameState.requiredCogs) gameState.exitOpen = true;
+            updateUI();
+        }
+        if(t === 17) { // Bonus Cog
+            gameState.map[ny][nx] = 0; gameState.cogs++;
+            const pts = 300 * gameState.combo;
+            gameState.score += pts; runStats.totalScore += pts; runStats.totalCogs++;
+            gameState.combo = Math.min(gameState.combo + 2, 10);
+            if(gameState.combo > runStats.bestCombo) runStats.bestCombo = gameState.combo;
+            gameState.comboTimer = now;
+            createParticle(nx, ny, '#fff700', 25, 10);
+            spawnFloatText(nx, ny, `✨+${pts}`);
+            if(gameState.cogs >= gameState.requiredCogs) gameState.exitOpen = true;
+            updateUI();
         }
 
-        function toggleNotifications() {
-            const panel = document.getElementById('notification-panel');
-            panel.classList.toggle('active');
-        }
-
-        function markAllRead() {
-            if (!userAddress) return;
-            
-            userNotifications = userNotifications.map(n => ({ ...n, read: true }));
-            localStorage.setItem(`grotto_notifs_${userAddress}`, JSON.stringify(userNotifications));
-            loadNotifications();
-        }
-
-        // Close notification panel when clicking outside
-        document.addEventListener('click', (e) => {
-            const panel = document.getElementById('notification-panel');
-            const btn = document.getElementById('notification-btn');
-            if (!panel.contains(e.target) && !btn.contains(e.target)) {
-                panel.classList.remove('active');
+        // Pressure plates
+        gameState.plates.forEach(p => {
+            if(p.x === nx && p.y === ny && !p.active) {
+                p.active = true;
+                gameState.gates.forEach(g => { gameState.map[g.y][g.x] = 0; createParticle(g.x, g.y, '#b87333', 20); });
             }
         });
 
-        async function refreshActivityFeed() {
-            const feed = document.getElementById('activity-feed');
-            try {
-                const { data: games, error } = await _supabase
-                    .from('grotto_games')
-                    .select('*')
-                    .eq('status', 2)
-                    .order('updated_at', { ascending: false })
-                    .limit(50);
+        // Spike trap
+        if(t === 8) {
+            const spikeAnim = Math.sin(Date.now()/400);
+            if(spikeAnim > 0.4) takeDamage(gameState.mode === 'ironclad' ? 100 : 25, 'SPIKE TRAP');
+        }
 
-                if (error) return;
-
-                feed.innerHTML = games.map(game => {
-                    const moves = ['', '☀️', '🌬️', '🌪️'];
-                    const hostMove = Number(game.host_move);
-                    const challengerMove = Number(game.challenger_move);
-                    
-                    let result = '', resultColor = '';
-                    if (hostMove === challengerMove) {
-                        result = 'STALEMATE';
-                        resultColor = 'text-yellow-400';
-                    } else if (
-                        (hostMove === 1 && challengerMove === 2) ||
-                        (hostMove === 2 && challengerMove === 3) ||
-                        (hostMove === 3 && challengerMove === 1)
-                    ) {
-                        result = `${game.host.slice(0,6)}... PREVAILS`;
-                        resultColor = 'text-green-400';
-                    } else {
-                        result = `${(game.challenger || 'Unknown').slice(0,6)}... PREVAILS`;
-                        resultColor = 'text-green-400';
-                    }
-                    
-                    const timeAgo = getTimeAgo(new Date(game.updated_at || game.created_at));
-                    
-                    return `
-                        <div class="grotto-glass border-l-4 border-purple-600 p-4 rounded-lg flex justify-between items-center hover:bg-purple-900/10 transition">
-                            <div class="flex-1">
-                                <div class="text-sm ${resultColor} font-bold cinzel">${result}</div>
-                                <div class="text-[11px] text-purple-500/60 mt-1">
-                                    ${moves[hostMove]} vs ${moves[challengerMove]} • ${game.wager} $${CURRENCY_SYMBOL} • ${timeAgo}
-                                </div>
-                            </div>
-                            <div class="text-3xl">${result.includes('STALEMATE') ? '⚖️' : '🏆'}</div>
-                        </div>
-                    `;
-                }).join('') || '<div class="text-center text-purple-700/50 py-8 italic">No recent battles...</div>';
-            } catch (err) {
-                console.error("Activity error:", err);
+        // Conveyor belt
+        if(t===9||t===10||t===11||t===12) {
+            const dirs = {9:[1,0], 10:[-1,0], 11:[0,1], 12:[0,-1]};
+            const [cdx, cdy] = dirs[t];
+            const cnx = nx+cdx, cny = ny+cdy;
+            if(cnx>=0 && cnx<COLS && cny>=0 && cny<gameState.map.length && gameState.map[cny][cnx] !== 1 && gameState.map[cny][cnx] !== 6) {
+                gameState.player.x = cnx; gameState.player.y = cny;
             }
         }
 
-        function getTimeAgo(date) {
-            const seconds = Math.floor((new Date() - date) / 1000);
-            if (seconds < 60) return `${seconds}s ago`;
-            const minutes = Math.floor(seconds / 60);
-            if (minutes < 60) return `${minutes}m ago`;
-            const hours = Math.floor(minutes / 60);
-            if (hours < 24) return `${hours}h ago`;
-            const days = Math.floor(hours / 24);
-            return `${days}d ago`;
-        }
-
-        async function refreshChat() {
-            const chatMessages = document.getElementById('chat-messages');
-            try {
-                const { data: messages, error } = await _supabase
-                    .from('grotto_chat')
-                    .select('*')
-                    .order('created_at', { ascending: false })
-                    .limit(50);
-
-                if (error) return;
-
-                const shouldScroll = chatMessages.scrollHeight - chatMessages.scrollTop === chatMessages.clientHeight;
-
-                chatMessages.innerHTML = messages.reverse().map(msg => {
-                    const isOwn = userAddress && msg.sender.toLowerCase() === userAddress.toLowerCase();
-                    return `
-                        <div class="${isOwn ? 'text-right' : 'text-left'}">
-                            <div class="inline-block max-w-[80%] px-4 py-3 rounded-lg" style="background: ${isOwn ? 'rgba(147, 51, 234, 0.3)' : 'rgba(76, 29, 149, 0.3)'}">
-                                <div class="text-[10px] text-purple-400/70 mb-1 cinzel">${msg.sender.slice(0,6)}...${msg.sender.slice(-4)}</div>
-                                <div class="text-sm text-purple-100">${escapeHtml(msg.message)}</div>
-                            </div>
-                        </div>
-                    `;
-                }).join('');
-
-                if (shouldScroll) {
-                    chatMessages.scrollTop = chatMessages.scrollHeight;
-                }
-            } catch (err) {
-                console.error("Chat error:", err);
+        // Teleporter
+        if(t===14||t===15) {
+            const target = gameState.teleporters.find(tp => tp.type !== t && (tp.type===14||tp.type===15));
+            if(target) {
+                gameState.player.x = target.x; gameState.player.y = target.y;
+                createParticle(target.x, target.y, t===14 ? '#aa44ff' : '#44ffaa', 20, 6);
             }
         }
 
-        async function sendMessage() {
-            const input = document.getElementById('chat-input');
-            const message = input.value.trim();
-            
-            if (!message || !userAddress) return;
-            
-            try {
-                await _supabase.from('grotto_chat').insert([{
-                    sender: userAddress.toLowerCase(),
-                    message: message
-                }]);
-                input.value = '';
-                refreshChat();
-            } catch (err) {
-                console.error("Send error:", err);
-                showToast("Message failed");
+        // Ice — slide extra tile
+        if(t === 16) {
+            const sx = gameState.player.x + dx, sy = gameState.player.y + dy;
+            if(sx>=0 && sx<COLS && sy>=0 && sy<gameState.map.length) {
+                const st = gameState.map[sy][sx];
+                if(st !== 1 && st !== 6) { gameState.player.x = sx; gameState.player.y = sy; }
             }
         }
 
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        async function loadLeaderboard() {
-            try {
-                const { data: games, error } = await _supabase
-                    .from('grotto_games')
-                    .select('*')
-                    .eq('status', 2);
-
-                if (error) return;
-
-                const playerStats = {};
-                let totalWagered = 0, totalBurnt = 0, totalTreasury = 0;
-                let biggestLoser = { address: null, lost: 0 };
-                let streakMaster = { address: null, streak: 0 };
-                let mostActive = { address: null, games: 0 };
-
-                games.forEach(game => {
-                    const wager = parseFloat(game.wager);
-                    totalWagered += wager * 2;
-                    const pot = wager * 2;
-                    totalBurnt += pot * 0.015;
-                    totalTreasury += pot * 0.015;
-
-                    [game.host, game.challenger].forEach(addr => {
-                        if (!addr) return;
-                        if (!playerStats[addr]) {
-                            playerStats[addr] = {
-                                address: addr,
-                                totalWagered: 0,
-                                totalLost: 0,
-                                wins: 0,
-                                losses: 0,
-                                draws: 0,
-                                games: 0,
-                                biggestPot: 0,
-                                longestStreak: 0,
-                                currentStreak: 0
-                            };
-                        }
-                        playerStats[addr].totalWagered += wager;
-                        playerStats[addr].games++;
-                        if (wager * 2 > playerStats[addr].biggestPot) {
-                            playerStats[addr].biggestPot = wager * 2;
-                        }
-                    });
-
-                    const hostMove = Number(game.host_move);
-                    const challengerMove = Number(game.challenger_move);
-
-                    if (hostMove === challengerMove) {
-                        playerStats[game.host].draws++;
-                        if (game.challenger) playerStats[game.challenger].draws++;
-                        playerStats[game.host].currentStreak = 0;
-                        if (game.challenger) playerStats[game.challenger].currentStreak = 0;
-                    } else {
-                        const hostWins = (
-                            (hostMove === 1 && challengerMove === 2) ||
-                            (hostMove === 2 && challengerMove === 3) ||
-                            (hostMove === 3 && challengerMove === 1)
-                        );
-                        if (hostWins) {
-                            playerStats[game.host].wins++;
-                            playerStats[game.host].currentStreak++;
-                            if (playerStats[game.host].currentStreak > playerStats[game.host].longestStreak) {
-                                playerStats[game.host].longestStreak = playerStats[game.host].currentStreak;
-                            }
-                            if (game.challenger) {
-                                playerStats[game.challenger].losses++;
-                                playerStats[game.challenger].totalLost += wager;
-                                playerStats[game.challenger].currentStreak = 0;
-                            }
-                        } else if (game.challenger) {
-                            playerStats[game.challenger].wins++;
-                            playerStats[game.challenger].currentStreak++;
-                            if (playerStats[game.challenger].currentStreak > playerStats[game.challenger].longestStreak) {
-                                playerStats[game.challenger].longestStreak = playerStats[game.challenger].currentStreak;
-                            }
-                            playerStats[game.host].losses++;
-                            playerStats[game.host].totalLost += wager;
-                            playerStats[game.host].currentStreak = 0;
-                        }
-                    }
-                });
-
-                // Find special stats
-                Object.values(playerStats).forEach(player => {
-                    if (player.totalLost > biggestLoser.lost) {
-                        biggestLoser = { address: player.address, lost: player.totalLost };
-                    }
-                    if (player.longestStreak > streakMaster.streak) {
-                        streakMaster = { address: player.address, streak: player.longestStreak };
-                    }
-                    if (player.games > mostActive.games) {
-                        mostActive = { address: player.address, games: player.games };
-                    }
-                });
-
-                document.getElementById('global-wagered').textContent = totalWagered.toFixed(2);
-                document.getElementById('global-burnt').textContent = totalBurnt.toFixed(2);
-                document.getElementById('global-treasury').textContent = totalTreasury.toFixed(2);
-                document.getElementById('global-games').textContent = games.length;
-
-                // Display special stats
-                document.getElementById('biggest-loser').innerHTML = biggestLoser.address ? `
-                    <div class="text-sm text-red-300/70 mb-2">Most Lost</div>
-                    <div class="cinzel text-2xl text-red-400 font-bold mb-1">${biggestLoser.address.slice(0,8)}...</div>
-                    <div class="text-xs text-red-500/50">${biggestLoser.lost.toFixed(2)} $HERESY Lost</div>
-                ` : '<div class="text-sm text-red-300/70">No data yet</div>';
-
-                document.getElementById('streak-master').innerHTML = streakMaster.address ? `
-                    <div class="text-sm text-yellow-300/70 mb-2">Longest Streak</div>
-                    <div class="cinzel text-2xl text-yellow-400 font-bold mb-1">${streakMaster.address.slice(0,8)}...</div>
-                    <div class="text-xs text-yellow-500/50">${streakMaster.streak} Consecutive Wins</div>
-                ` : '<div class="text-sm text-yellow-300/70">No data yet</div>';
-
-                document.getElementById('most-active').innerHTML = mostActive.address ? `
-                    <div class="text-sm text-blue-300/70 mb-2">Most Rituals</div>
-                    <div class="cinzel text-2xl text-blue-400 font-bold mb-1">${mostActive.address.slice(0,8)}...</div>
-                    <div class="text-xs text-blue-500/50">${mostActive.games} Total Games</div>
-                ` : '<div class="text-sm text-blue-300/70">No data yet</div>';
-
-                const leaderboard = Object.values(playerStats)
-                    .sort((a, b) => b.totalWagered - a.totalWagered)
-                    .slice(0, 50);
-
-                const tbody = document.getElementById('leaderboard-body');
-                tbody.innerHTML = leaderboard.map((player, index) => {
-                    const winRate = player.games > 0 ? ((player.wins / player.games) * 100).toFixed(1) : 0;
-                    return `
-                        <tr class="border-b border-purple-900/20 hover:bg-purple-900/10 cursor-pointer transition" onclick="showPlayerProfile('${player.address}')">
-                            <td class="p-4 text-purple-400 cinzel font-bold">#${index + 1}</td>
-                            <td class="p-4">
-                                <div class="text-sm text-purple-200">${player.address.slice(0,10)}...${player.address.slice(-8)}</div>
-                                <div class="text-[11px] text-purple-600/60">${player.games} rituals</div>
-                            </td>
-                            <td class="p-4 text-right cinzel text-purple-400 font-semibold">${player.totalWagered.toFixed(2)}</td>
-                            <td class="p-4 text-right cinzel font-semibold ${winRate >= 50 ? 'text-green-400' : 'text-red-400'}">${winRate}%</td>
-                            <td class="p-4 text-right cinzel text-purple-400">${player.biggestPot.toFixed(2)}</td>
-                            <td class="p-4 text-right cinzel text-yellow-400">${player.longestStreak}</td>
-                        </tr>
-                    `;
-                }).join('');
-            } catch (err) {
-                console.error("Leaderboard error:", err);
+        // Exit
+        if(t === 3 && gameState.exitOpen) {
+            const pack = gameState.mapPack;
+            if(gameState.level >= pack.levels.length && gameState.mode !== 'endless') {
+                triggerWin();
+            } else {
+                const levelBonus = 500 + (gameState.mode === 'blitz' ? gameState.blitzTimer * 10 : 0);
+                gameState.score += levelBonus;
+                runStats.levelsCompleted++;
+                spawnFloatText(nx, ny, `LEVEL CLEAR +${levelBonus}!`);
+                setTimeout(() => nextLevel(), 400);
             }
         }
+    }
 
-        async function showPlayerProfile(address) {
-            document.getElementById('player-modal').classList.add('active');
-            document.getElementById('player-modal-content').innerHTML = '<div class="text-center py-8 text-purple-400">Summoning archive...</div>';
-            // Profile implementation from previous code...
-        }
+    function spawnFloatText(tx, ty, text) {
+        const el = document.createElement('div');
+        el.className = 'steam-cloud';
+        el.style.color = text.includes('+') ? '#ffd700' : '#fff';
+        el.style.left = (tx * TILE_SIZE + canvas.offsetLeft + 10) + 'px';
+        el.style.top = (ty * TILE_SIZE + canvas.offsetTop) + 'px';
+        el.style.zIndex = 200;
+        el.textContent = text;
+        document.getElementById('game-container').appendChild(el);
+        setTimeout(() => el.remove(), 1200);
+    }
 
-        function closePlayerModal() {
-            document.getElementById('player-modal').classList.remove('active');
-        }
-
-        async function loadProfile() {
-            const profileContent = document.getElementById('profile-content');
-            
-            if (!userAddress) {
-                profileContent.innerHTML = `
-                    <div class="text-center py-20">
-                        <div class="text-7xl mb-4 text-purple-500/30">🔒</div>
-                        <div class="cinzel text-xl mb-2 text-purple-400">PORTAL REQUIRED</div>
-                        <div class="text-purple-500/70 text-sm">Summon portal to view your chronicle</div>
-                    </div>`;
-                return;
+    function checkHazards() {
+        // Steam vents
+        gameState.hazards.forEach(h => {
+            h.timer += 1.8;
+            const cycle = h.timer % 140;
+            h.active = cycle > 50 && cycle < 100;
+            if(h.active) {
+                if(Math.random() > 0.3) createParticle(h.x, h.y, 'rgba(255,255,255,0.4)', 2, 2);
+                if(gameState.player.x === h.x && gameState.player.y === h.y) takeDamage(gameState.mode === 'ironclad' ? 100 : 0.8, 'BURNING STEAM');
             }
-            // Profile implementation from previous code...
+        });
+        // Crushers
+        gameState.crushers.forEach(c => {
+            const crush = Math.abs(Math.sin(Date.now()/500 + c.phase)) > 0.9;
+            if(crush && gameState.player.x === c.x && gameState.player.y === c.y) takeDamage(gameState.mode === 'ironclad' ? 100 : 40, 'CRUSHED');
+        });
+        // Combo decay
+        if(Date.now() - gameState.comboTimer > 2500 && gameState.combo > 1) {
+            gameState.combo = 1;
+            updateUI();
         }
-        
-        function getStatusText(s) { 
-            return ["Open", "Active", "Sealed", "Retracted", "Forfeited"][s]; 
+    }
+
+    function takeDamage(amt, type) {
+        if(gameState.gameOver) return;
+        gameState.health -= amt;
+        runStats.damageTaken += amt;
+        updateUI();
+        canvas.classList.add('shake');
+        setTimeout(() => canvas.classList.remove('shake'), 500);
+        if(gameState.health <= 0) {
+            gameState.lives--;
+            if(gameState.lives <= 0) {
+                triggerGameOver(type);
+            } else {
+                gameState.health = 100;
+                updateUI();
+                spawnFloatText(gameState.player.x, gameState.player.y, `💀 ${gameState.lives} lives left`);
+            }
         }
-        
-        function switchTab(tab) {
-            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-            document.getElementById(`tab-${tab}`).classList.add('active');
-            
-            document.querySelectorAll('.page-section').forEach(section => section.classList.remove('active'));
-            document.getElementById(`page-${tab}`).classList.add('active');
-            
-            if (tab === 'profile') loadProfile();
-            if (tab === 'leaderboard') loadLeaderboard();
+    }
+
+    function triggerGameOver(m) {
+        gameState.gameOver = true;
+        clearInterval(gameState.blitzInterval);
+        document.getElementById('modal-title').innerText = "PRESSURE FAILURE";
+        document.getElementById('modal-btn').innerText = "Repair & Retry";
+        document.getElementById('modal-btn').onclick = () => { gameState.score = 0; initLevel(1); requestAnimationFrame(gameLoop); };
+        document.getElementById('modal-text').innerText = 'System Seized: ' + m + `   Score: ${gameState.score.toLocaleString()}`;
+        document.getElementById('msg-modal').style.display = 'flex';
+        saveScore({ score: gameState.score, level: gameState.level, mode: gameState.mode, map: gameState.mapPack?.name||'?' });
+    }
+
+    function triggerWin() {
+        gameState.gameOver = true;
+        clearInterval(gameState.blitzInterval);
+        const elapsed = Math.floor((Date.now() - runStats.startTime) / 1000);
+        const finalScore = gameState.score;
+        const rank = finalScore > 50000 ? 'S+' : finalScore > 30000 ? 'S' : finalScore > 15000 ? 'A' : finalScore > 8000 ? 'B' : finalScore > 3000 ? 'C' : 'D';
+        saveScore({ score: finalScore, level: gameState.level, mode: gameState.mode, map: gameState.mapPack?.name||'?' });
+
+        document.getElementById('fs-total').innerText = finalScore.toLocaleString();
+        document.getElementById('fs-rank').innerText = rank;
+        document.getElementById('fs-rank').style.borderColor = rank.startsWith('S') ? '#ffd700' : rank === 'A' ? '#aaffaa' : rank === 'B' ? '#aaaaff' : '#888';
+        document.getElementById('fs-levels').innerText = runStats.levelsCompleted;
+        document.getElementById('fs-cogs').innerText = runStats.totalCogs;
+        document.getElementById('fs-combo').innerText = 'x' + runStats.bestCombo;
+        document.getElementById('fs-damage').innerText = Math.round(runStats.damageTaken);
+        document.getElementById('fs-time').innerText = elapsed + 's';
+        document.getElementById('fs-mode').innerText = gameState.mode.charAt(0).toUpperCase() + gameState.mode.slice(1);
+        document.getElementById('fs-map').innerText = gameState.mapPack?.name || 'Standard';
+        document.getElementById('score-screen').style.display = 'flex';
+        document.getElementById('game-ui').style.display = 'none';
+    }
+
+    function nextLevel() { initLevel(gameState.level + 1); }
+    function resetLevel() { document.getElementById('msg-modal').style.display = 'none'; gameState.score = 0; initLevel(1); requestAnimationFrame(gameLoop); }
+
+    // ══════════════════════════════════════════════
+    // GAME LOOP
+    // ══════════════════════════════════════════════
+    function gameLoop() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Phantom fog setup
+        const isPhantom = gameState.mode === 'phantom';
+
+        for(let y=0; y<gameState.map.length; y++) {
+            for(let x=0; x<COLS; x++) drawTile(x, y, gameState.map[y][x]);
         }
-        
-        function showToast(msg) {
-            const t = document.getElementById('toast');
-            t.innerText = msg;
-            t.classList.remove('translate-y-32');
-            setTimeout(() => t.classList.add('translate-y-32'), 4000);
+
+        checkHazards();
+
+        // Particles
+        for(let i=gameState.particles.length-1; i>=0; i--) {
+            const p = gameState.particles[i];
+            p.x += p.vx; p.y += p.vy; p.life -= 0.02;
+            if(p.life <= 0) { gameState.particles.splice(i,1); continue; }
+            ctx.globalAlpha = p.life; ctx.fillStyle = p.color;
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI*2); ctx.fill();
         }
-        
-        window.onload = init;
-        
-        window.onbeforeunload = () => {
-            if (lobbyRefreshInterval) clearInterval(lobbyRefreshInterval);
-            if (activityRefreshInterval) clearInterval(activityRefreshInterval);
-            if (chatRefreshInterval) clearInterval(chatRefreshInterval);
-        };
-    </script>
+        ctx.globalAlpha = 1;
+
+        // Player smooth interpolation
+        gameState.player.visualX += (gameState.player.x - gameState.player.visualX)*0.25;
+        gameState.player.visualY += (gameState.player.y - gameState.player.visualY)*0.25;
+
+        // Glow
+        const skin = SKINS.find(s=>s.id===selectedSkinId) || SKINS[0];
+        const grad = ctx.createRadialGradient(
+            gameState.player.visualX*TILE_SIZE+27, gameState.player.visualY*TILE_SIZE+27, 5,
+            gameState.player.visualX*TILE_SIZE+27, gameState.player.visualY*TILE_SIZE+27, 100
+        );
+        grad.addColorStop(0, skin.glowColor);
+        grad.addColorStop(1, 'transparent');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        drawGear(gameState.player.visualX*TILE_SIZE, gameState.player.visualY*TILE_SIZE, skin.color, gameState.player.rotation, 18, 10);
+
+        // Phantom fog overlay
+        if(isPhantom) {
+            ctx.save();
+            const fogGrad = ctx.createRadialGradient(
+                gameState.player.visualX*TILE_SIZE+TILE_SIZE/2,
+                gameState.player.visualY*TILE_SIZE+TILE_SIZE/2, TILE_SIZE*2,
+                gameState.player.visualX*TILE_SIZE+TILE_SIZE/2,
+                gameState.player.visualY*TILE_SIZE+TILE_SIZE/2, TILE_SIZE*4
+            );
+            fogGrad.addColorStop(0, 'transparent');
+            fogGrad.addColorStop(1, 'rgba(0,0,0,0.92)');
+            ctx.fillStyle = fogGrad;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.restore();
+        }
+
+        if(!gameState.gameOver) requestAnimationFrame(gameLoop);
+    }
+
+    // ══════════════════════════════════════════════
+    // PARTICLES
+    // ══════════════════════════════════════════════
+    function createParticle(x, y, color, count=10, speed=5) {
+        for(let i=0; i<count; i++) {
+            gameState.particles.push({
+                x: x*TILE_SIZE+TILE_SIZE/2, y: y*TILE_SIZE+TILE_SIZE/2,
+                vx: (Math.random()-0.5)*speed, vy: (Math.random()-0.5)*speed,
+                life: 1.0, color: color, size: 2+Math.random()*4
+            });
+        }
+    }
+
+    // ══════════════════════════════════════════════
+    // INPUT
+    // ══════════════════════════════════════════════
+    window.addEventListener('keydown', e => {
+        switch(e.key) {
+            case 'ArrowUp':    case 'w': case 'W': movePlayer(0,-1); break;
+            case 'ArrowDown':  case 's': case 'S': movePlayer(0,1);  break;
+            case 'ArrowLeft':  case 'a': case 'A': movePlayer(-1,0); break;
+            case 'ArrowRight': case 'd': case 'D': movePlayer(1,0);  break;
+            case 'r': case 'R': if(gameState.gameOver===false) { gameState.score=0; initLevel(1); } break;
+        }
+    });
+
+    document.getElementById('btn-up').onclick    = () => movePlayer(0,-1);
+    document.getElementById('btn-down').onclick  = () => movePlayer(0,1);
+    document.getElementById('btn-left').onclick  = () => movePlayer(-1,0);
+    document.getElementById('btn-right').onclick = () => movePlayer(1,0);
+
+    // Touch swipe support
+    let touchStart = null;
+    canvas.addEventListener('touchstart', e => { touchStart = {x: e.touches[0].clientX, y: e.touches[0].clientY}; }, {passive:true});
+    canvas.addEventListener('touchend', e => {
+        if(!touchStart) return;
+        const dx = e.changedTouches[0].clientX - touchStart.x;
+        const dy = e.changedTouches[0].clientY - touchStart.y;
+        if(Math.abs(dx) > Math.abs(dy)) movePlayer(dx>0?1:-1, 0);
+        else movePlayer(0, dy>0?1:-1);
+        touchStart = null;
+    }, {passive:true});
+
+    // Init menus on load
+    buildMenus();
+
+</script>
 </body>
 </html>
